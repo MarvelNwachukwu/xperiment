@@ -1,0 +1,14 @@
+{
+  "name": "x-follow-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "login": "tsx follow-bot.ts login",
+    "follow": "tsx follow-bot.ts follow"
+  },
+  "devDependencies": {
+    "playwright": "^1.51.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
