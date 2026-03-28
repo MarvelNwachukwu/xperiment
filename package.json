@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "login": "tsx follow-bot.ts login",
-    "follow": "tsx follow-bot.ts follow"
+    "follow": "tsx follow-bot.ts follow",
+    "scan": "tsx unfollow-bot.ts scan",
+    "unfollow": "tsx unfollow-bot.ts unfollow"
   },
   "devDependencies": {
     "playwright": "^1.51.0",
