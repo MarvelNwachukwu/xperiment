@@ -1,21 +1,20 @@
-import { chromium } from "playwright-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import type { Page } from "playwright";
+import { chromium } from "playwright";
+import type { Page, BrowserContext } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 
-// Apply stealth patches to avoid bot detection
-chromium.use(StealthPlugin());
-
 // ── Configuration ──────────────────────────────────────────────
 const MAX_FOLLOWS = 150;
-const MIN_DELAY_SEC = 30;
-const MAX_DELAY_SEC = 90;
-const COOKIES_FILE = path.join(__dirname, "cookies.json");
+const MIN_DELAY_SEC = 15;
+const MAX_DELAY_SEC = 45;
 const LOG_FILE = path.join(__dirname, "follow-log.json");
 const FOLLOW_TIMEOUT_MS = 5000;
 const SCROLL_WAIT_MS = 5000;
+const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
+const RATE_LIMIT_THRESHOLD = 3;       // consecutive failures before assuming rate limit
+const RATE_LIMIT_COOLDOWN_MIN = 15;   // minutes to wait when rate-limited
+const MAX_RATE_LIMIT_WAITS = 5;       // give up after this many cooldowns in one session
 
 // ── Types ──────────────────────────────────────────────────────
 interface FollowRecord {
@@ -55,7 +54,6 @@ function saveLog(records: FollowRecord[]): void {
 }
 
 async function dismissPopups(page: Page): Promise<void> {
-  // Quick check: skip if no dialog/overlay is visible
   const hasDialog = await page.$('div[role="dialog"], [data-testid="sheetDialog"]');
   if (!hasDialog) return;
 
@@ -79,29 +77,46 @@ async function dismissPopups(page: Page): Promise<void> {
   }
 }
 
+// ── Browser Launch ─────────────────────────────────────────────
+// Uses a persistent Chrome profile so cookies, sessions, and browser
+// state survive across runs — no separate cookies.json needed.
+// Also hides automation flags that X detects.
+async function launchBrowser(): Promise<BrowserContext> {
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    headless: false,
+    channel: "chrome",
+    viewport: { width: 1280, height: 800 },
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--no-first-run",
+      "--no-default-browser-check",
+    ],
+  });
+
+  // Remove navigator.webdriver flag on every new page before site JS runs
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
+  });
+
+  return context;
+}
+
 // ── Login Command ──────────────────────────────────────────────
 async function login(): Promise<void> {
-  console.log("Launching browser for manual login...");
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  });
+  console.log("Launching Chrome for manual login...");
+  console.log("(Using persistent profile — cookies are saved automatically)\n");
+  const context = await launchBrowser();
   const page = await context.newPage();
 
   await page.goto("https://x.com/login");
   await waitForEnter();
 
-  const cookies = await context.cookies();
-  fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2));
-  console.log(`Cookies saved to ${COOKIES_FILE} (${cookies.length} cookies)`);
-
-  await browser.close();
+  console.log("Login session saved to persistent profile. You can close this now.");
+  await context.close();
 }
 
 // ── Follow Command ─────────────────────────────────────────────
 async function follow(): Promise<void> {
-  // Parse target from CLI args
   let target = process.argv[3];
   if (!target) {
     console.error("Usage: tsx follow-bot.ts follow @targethandle");
@@ -109,36 +124,26 @@ async function follow(): Promise<void> {
   }
   target = target.replace(/^@/, "");
 
-  // Load cookies
-  if (!fs.existsSync(COOKIES_FILE)) {
-    console.error(`No cookies file found at ${COOKIES_FILE}. Run "npm run login" first.`);
-    process.exit(1);
-  }
-  const cookies = JSON.parse(fs.readFileSync(COOKIES_FILE, "utf-8"));
-
-  // Launch visible browser with stealth to avoid bot detection
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  });
-  await context.addCookies(cookies);
+  const context = await launchBrowser();
   const page = await context.newPage();
 
   // Navigate to followers page
   console.log(`Navigating to https://x.com/${target}/followers ...`);
   await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
 
-  // Check if redirected to login (cookies expired)
+  // Wait for page to settle
+  await page.waitForTimeout(3000);
+
+  // Check if redirected to login (not logged in)
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-    console.error("Cookies expired. Run `npm run login` again.");
-    await browser.close();
+    console.error("Not logged in. Run `npm run login` first.");
+    await context.close();
     process.exit(1);
   }
 
   console.log(`Loaded followers page for @${target}`);
 
-  // Load follow log (kept in memory for the session to avoid re-reading)
+  // Load follow log (kept in memory for the session)
   const logRecords = loadLog();
   const followedSet = new Set(logRecords.map((r) => r.username));
   let followCount = 0;
@@ -147,14 +152,15 @@ async function follow(): Promise<void> {
   const initialCards = await page.waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 }).catch(() => null);
   if (!initialCards) {
     console.error("No follower cards found. The page may not have loaded correctly.");
-    await browser.close();
+    await context.close();
     process.exit(1);
   }
 
   const processedUsernames = new Set<string>();
+  let consecutiveFailures = 0;
+  let rateLimitWaits = 0;
 
   while (followCount < MAX_FOLLOWS) {
-    // Collect all visible follower cells
     const cells = await page.$$('[data-testid="cellInnerDiv"]');
 
     let foundNew = false;
@@ -162,7 +168,6 @@ async function follow(): Promise<void> {
     for (const cell of cells) {
       if (followCount >= MAX_FOLLOWS) break;
 
-      // Extract username from the user link within this cell
       const userLink = await cell.$('a[href^="/"][role="link"]');
       if (!userLink) continue;
 
@@ -186,7 +191,6 @@ async function follow(): Promise<void> {
 
       const testId = await followButton.getAttribute("data-testid");
       if (testId && testId.includes("unfollow")) {
-        // Already following this user
         continue;
       }
 
@@ -197,21 +201,48 @@ async function follow(): Promise<void> {
 
       // Click Follow
       try {
-        // Dismiss any popup that might be blocking
         await dismissPopups(page);
         console.log(`  Following @${username}...`);
         await followButton.click();
 
-        // Wait for the follow to be confirmed (button changes to unfollow state)
+        // Wait for confirmation
         await page.waitForTimeout(FOLLOW_TIMEOUT_MS);
         const unfollowBtn = await cell.$('[data-testid$="-unfollow"]');
-        if (!unfollowBtn) {
+        let confirmed = !!unfollowBtn;
+        if (!confirmed) {
           const newText = await followButton.innerText().catch(() => "");
-          if (newText !== "Following" && newText !== "Pending") {
-            console.warn(`  Follow confirmation timed out for @${username}, skipping.`);
-            continue;
-          }
+          confirmed = newText === "Following" || newText === "Pending";
         }
+
+        if (!confirmed) {
+          consecutiveFailures++;
+          console.warn(`  Follow failed for @${username} (${consecutiveFailures} in a row)`);
+
+          // Detect rate limiting: multiple consecutive failures
+          if (consecutiveFailures >= RATE_LIMIT_THRESHOLD) {
+            rateLimitWaits++;
+            if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
+              console.log(`\n  Hit rate limit ${MAX_RATE_LIMIT_WAITS} times this session. Stopping to be safe.`);
+              break;
+            }
+            console.log(`\n  Looks like we're rate-limited. Waiting ${RATE_LIMIT_COOLDOWN_MIN} minutes...`);
+            console.log(`  (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS} cooldowns used this session)`);
+            await page.waitForTimeout(RATE_LIMIT_COOLDOWN_MIN * 60 * 1000);
+            consecutiveFailures = 0;
+
+            // Reload the page to get fresh state
+            console.log("  Reloading followers page...");
+            await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+            await page.waitForTimeout(3000);
+            processedUsernames.clear();
+            // Re-add already-followed users so we still skip them
+            for (const u of followedSet) processedUsernames.add(u);
+          }
+          continue;
+        }
+
+        // Success — reset failure counter
+        consecutiveFailures = 0;
 
         // Log the follow
         followCount++;
@@ -226,24 +257,26 @@ async function follow(): Promise<void> {
 
         console.log(`  ✓ Followed @${username} (${followCount}/${MAX_FOLLOWS})`);
 
-        // Random delay before next follow
         if (followCount < MAX_FOLLOWS) {
           await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
         }
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
+        consecutiveFailures++;
         continue;
       }
     }
 
-    // If no new usernames were found in this pass, scroll for more
+    // If we broke out of the inner loop due to rate limit max, break outer too
+    if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) break;
+
+    // Scroll for more followers
     if (!foundNew) {
       console.log("  Scrolling for more followers...");
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 3));
 
       await page.waitForTimeout(SCROLL_WAIT_MS);
 
-      // Check if new cells appeared
       const newCells = await page.$$('[data-testid="cellInnerDiv"]');
       let hasNewUsers = false;
       for (const cell of newCells) {
@@ -266,7 +299,7 @@ async function follow(): Promise<void> {
   }
 
   console.log(`\nSession complete. Followed ${followCount} users.`);
-  await browser.close();
+  await context.close();
 }
 
 // ── Main ───────────────────────────────────────────────────────

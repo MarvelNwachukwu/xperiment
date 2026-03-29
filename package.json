@@ -4,15 +4,13 @@
   "private": true,
   "scripts": {
     "login": "tsx follow-bot.ts login",
-    "follow": "tsx follow-bot.ts follow"
+    "follow": "tsx follow-bot.ts follow",
+    "scan": "tsx unfollow-bot.ts scan",
+    "unfollow": "tsx unfollow-bot.ts unfollow"
   },
   "devDependencies": {
     "playwright": "^1.51.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
-  },
-  "dependencies": {
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
