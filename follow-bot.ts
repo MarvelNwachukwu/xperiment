@@ -406,8 +406,11 @@ if (command === "login") {
 } else {
   console.error(
     "Usage:\n" +
-    "  npm run login              — Log in to X and save cookies\n" +
-    "  npm run follow -- @handle  — Follow users from @handle's followers page"
+    "  npm run login                                — Log in to X and save cookies\n" +
+    "  npm run follow -- @handle                    — Follow users from @handle's followers\n" +
+    "  npm run follow -- @handle --following         — Follow from @handle's following list\n" +
+    "  npm run follow -- @handle --tech-only         — Only follow tech accounts\n" +
+    "  npm run follow -- @handle --following --tech-only — Tech accounts from following list"
   );
   process.exit(1);
 }
