@@ -167,21 +167,13 @@ async function login(): Promise<void> {
   await context.close();
 }
 
-// ── Follow Command ─────────────────────────────────────────────
-async function follow(): Promise<void> {
-  let target = process.argv[3];
-  if (!target) {
-    console.error("Usage: tsx follow-bot.ts follow @targethandle");
-    process.exit(1);
-  }
-  target = target.replace(/^@/, "");
+// ── Follow Engine ─────────────────────────────────────────────
+async function followFromPage(options: FollowEngineOptions): Promise<number> {
+  const { page, target, pageUrl, cardLabel, bioFilter, source } = options;
 
-  const context = await launchBrowser();
-  const page = await context.newPage();
-
-  // Navigate to followers page
-  console.log(`Navigating to https://x.com/${target}/followers ...`);
-  await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+  // Navigate to target page
+  console.log(`Navigating to ${pageUrl} ...`);
+  await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
 
   // Wait for page to settle
   await page.waitForTimeout(3000);
@@ -189,23 +181,23 @@ async function follow(): Promise<void> {
   // Check if redirected to login (not logged in)
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
     console.error("Not logged in. Run `npm run login` first.");
-    await context.close();
-    process.exit(1);
+    return 0;
   }
 
-  console.log(`Loaded followers page for @${target}`);
+  console.log(`Loaded ${cardLabel} page for @${target}`);
 
   // Load follow log (kept in memory for the session)
   const logRecords = loadLog();
   const followedSet = new Set(logRecords.map((r) => r.username));
   let followCount = 0;
 
-  // Wait for follower cards to appear
-  const initialCards = await page.waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 }).catch(() => null);
+  // Wait for user cards to appear
+  const initialCards = await page
+    .waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 })
+    .catch(() => null);
   if (!initialCards) {
-    console.error("No follower cards found. The page may not have loaded correctly.");
-    await context.close();
-    process.exit(1);
+    console.error(`No ${cardLabel} cards found. The page may not have loaded correctly.`);
+    return 0;
   }
 
   const processedUsernames = new Set<string>();
@@ -251,6 +243,15 @@ async function follow(): Promise<void> {
         continue;
       }
 
+      // Skip check 3: bio filter (--tech-only)
+      if (bioFilter) {
+        const bio = await extractBio(cell);
+        if (!bioFilter(bio)) {
+          console.log(`  Skipping @${username} (bio doesn't match filter)`);
+          continue;
+        }
+      }
+
       // Click Follow
       try {
         await dismissPopups(page);
@@ -283,8 +284,8 @@ async function follow(): Promise<void> {
             consecutiveFailures = 0;
 
             // Reload the page to get fresh state
-            console.log("  Reloading followers page...");
-            await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+            console.log(`  Reloading ${cardLabel} page...`);
+            await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
             await page.waitForTimeout(3000);
             processedUsernames.clear();
             // Re-add already-followed users so we still skip them
@@ -303,6 +304,7 @@ async function follow(): Promise<void> {
         const record: FollowRecord = {
           username,
           target,
+          source,
           timestamp: new Date().toISOString(),
         };
         logRecords.push(record);
@@ -324,9 +326,9 @@ async function follow(): Promise<void> {
     // If we broke out of the inner loop due to rate limit max, break outer too
     if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) break;
 
-    // Scroll for more followers
+    // Scroll for more users
     if (!foundNew) {
-      console.log("  Scrolling for more followers...");
+      console.log(`  Scrolling for more ${cardLabel}...`);
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 3));
 
       await page.waitForTimeout(SCROLL_WAIT_MS);
@@ -346,11 +348,43 @@ async function follow(): Promise<void> {
       }
 
       if (!hasNewUsers) {
-        console.log("  No more followers to load. Ending session.");
+        console.log(`  No more ${cardLabel} to load. Ending session.`);
         break;
       }
     }
   }
+
+  return followCount;
+}
+
+// ── Follow Command ─────────────────────────────────────────────
+async function follow(): Promise<void> {
+  const args = process.argv.slice(3);
+  const targetArg = args.find((a) => a.startsWith("@") || (!a.startsWith("-") && a !== "follow"));
+  if (!targetArg) {
+    console.error("Usage: tsx follow-bot.ts follow @targethandle [--following] [--tech-only]");
+    process.exit(1);
+  }
+  const target = targetArg.replace(/^@/, "");
+
+  const useFollowing = args.includes("--following");
+  const techOnly = args.includes("--tech-only");
+
+  const source: "followers" | "following" = useFollowing ? "following" : "followers";
+  const pageUrl = `https://x.com/${target}/${source}`;
+  const cardLabel = source;
+
+  const context = await launchBrowser();
+  const page = await context.newPage();
+
+  const followCount = await followFromPage({
+    page,
+    target,
+    pageUrl,
+    cardLabel,
+    source,
+    bioFilter: techOnly ? matchesTechKeywords : undefined,
+  });
 
   console.log(`\nSession complete. Followed ${followCount} users.`);
   await context.close();
