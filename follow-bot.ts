@@ -237,6 +237,8 @@ async function follow(): Promise<void> {
             processedUsernames.clear();
             // Re-add already-followed users so we still skip them
             for (const u of followedSet) processedUsernames.add(u);
+            // Break inner loop — old cell handles are stale after navigation
+            break;
           }
           continue;
         }
