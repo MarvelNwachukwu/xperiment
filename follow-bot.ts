@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import type { Page, BrowserContext } from "playwright";
+import type { Page, BrowserContext, ElementHandle } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
@@ -20,7 +20,17 @@ const MAX_RATE_LIMIT_WAITS = 5;       // give up after this many cooldowns in on
 interface FollowRecord {
   username: string;
   target: string;
+  source: "followers" | "following";
   timestamp: string;
+}
+
+interface FollowEngineOptions {
+  page: Page;
+  target: string;
+  pageUrl: string;
+  cardLabel: string;
+  bioFilter?: (bio: string) => boolean;
+  source: "followers" | "following";
 }
 
 // ── Helpers ────────────────────────────────────────────────────
