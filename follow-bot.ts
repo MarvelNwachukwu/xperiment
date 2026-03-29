@@ -28,7 +28,6 @@ interface FollowEngineOptions {
   page: Page;
   target: string;
   pageUrl: string;
-  cardLabel: string;
   bioFilter?: (bio: string) => boolean;
   source: "followers" | "following";
 }
@@ -169,7 +168,7 @@ async function login(): Promise<void> {
 
 // ── Follow Engine ─────────────────────────────────────────────
 async function followFromPage(options: FollowEngineOptions): Promise<number> {
-  const { page, target, pageUrl, cardLabel, bioFilter, source } = options;
+  const { page, target, pageUrl, bioFilter, source } = options;
 
   // Navigate to target page
   console.log(`Navigating to ${pageUrl} ...`);
@@ -180,11 +179,10 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
 
   // Check if redirected to login (not logged in)
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-    console.error("Not logged in. Run `npm run login` first.");
-    return 0;
+    throw new Error("Not logged in. Run `npm run login` first.");
   }
 
-  console.log(`Loaded ${cardLabel} page for @${target}`);
+  console.log(`Loaded ${source} page for @${target}`);
 
   // Load follow log (kept in memory for the session)
   const logRecords = loadLog();
@@ -196,8 +194,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
     .waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 })
     .catch(() => null);
   if (!initialCards) {
-    console.error(`No ${cardLabel} cards found. The page may not have loaded correctly.`);
-    return 0;
+    throw new Error(`No ${source} cards found. The page may not have loaded correctly.`);
   }
 
   const processedUsernames = new Set<string>();
@@ -245,7 +242,8 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
 
       // Skip check 3: bio filter (--tech-only)
       if (bioFilter) {
-        const bio = await extractBio(cell);
+        const rawBio = await extractBio(cell);
+        const bio = rawBio.replace(`@${username}`, "").trim();
         if (!bioFilter(bio)) {
           console.log(`  Skipping @${username} (bio doesn't match filter)`);
           continue;
@@ -284,7 +282,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
             consecutiveFailures = 0;
 
             // Reload the page to get fresh state
-            console.log(`  Reloading ${cardLabel} page...`);
+            console.log(`  Reloading ${source} page...`);
             await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
             await page.waitForTimeout(3000);
             processedUsernames.clear();
@@ -328,7 +326,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
 
     // Scroll for more users
     if (!foundNew) {
-      console.log(`  Scrolling for more ${cardLabel}...`);
+      console.log(`  Scrolling for more ${source}...`);
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 3));
 
       await page.waitForTimeout(SCROLL_WAIT_MS);
@@ -348,7 +346,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
       }
 
       if (!hasNewUsers) {
-        console.log(`  No more ${cardLabel} to load. Ending session.`);
+        console.log(`  No more ${source} to load. Ending session.`);
         break;
       }
     }
@@ -372,7 +370,6 @@ async function follow(): Promise<void> {
 
   const source: "followers" | "following" = useFollowing ? "following" : "followers";
   const pageUrl = `https://x.com/${target}/${source}`;
-  const cardLabel = source;
 
   const context = await launchBrowser();
   const page = await context.newPage();
@@ -381,7 +378,6 @@ async function follow(): Promise<void> {
     page,
     target,
     pageUrl,
-    cardLabel,
     source,
     bioFilter: techOnly ? matchesTechKeywords : undefined,
   });
