@@ -53,11 +53,18 @@ A few things it handles:
 
 - It skips anyone you already follow
 - It skips anyone it followed in a previous session (tracked in `follow-log.json`)
-- If a follow fails for whatever reason, it moves on to the next person
 - If X shows a popup or dialog, it tries to dismiss it and keep going
 - It scrolls down automatically to load more followers as it goes
 
-The 150 cap is there because X will rate-limit you beyond that. I learned this the hard way. 15-45 seconds between follows is the sweet spot I landed on after getting rate-limited at 10-second intervals.
+### Rate limiting
+
+X will rate-limit you after roughly 15-20 follows in a row. There's no way around this. What the script does is detect it and deal with it automatically.
+
+When a follow fails (the button doesn't change to "Following"), the script keeps count. If 3 fail in a row, it assumes you've been rate-limited and pauses for 15 minutes. After the cooldown, it reloads the page and picks up where it left off. No users get skipped or lost.
+
+In practice a session looks something like: follow 15 people, rate-limited, wait 15 min, follow another 15, rate-limited, wait 15 min, and so on. It'll do this up to 5 times before calling it quits for the session. So a full 150-follow run takes a few hours with the waiting, but it gets there without you having to babysit it.
+
+15-45 seconds between follows is the delay sweet spot I landed on. I tried 10-second intervals early on and got rate-limited almost immediately.
 
 Every successful follow gets logged to `follow-log.json` with the username, the target account you pulled them from, and a timestamp:
 
@@ -137,6 +144,9 @@ The numbers are defined at the top of each script file. To change them, open the
 In `follow-bot.ts`:
 - `MAX_FOLLOWS` -- how many people to follow before stopping (default: 150)
 - `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows (default: 15-45 seconds)
+- `RATE_LIMIT_THRESHOLD` -- how many consecutive failures before assuming rate limit (default: 3)
+- `RATE_LIMIT_COOLDOWN_MIN` -- how long to wait when rate-limited, in minutes (default: 15)
+- `MAX_RATE_LIMIT_WAITS` -- how many cooldowns before giving up for the session (default: 5)
 
 In `unfollow-bot.ts`:
 - `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between unfollows (default: 15-45 seconds)
