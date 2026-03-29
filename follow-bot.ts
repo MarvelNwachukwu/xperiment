@@ -6,12 +6,15 @@ import * as readline from "readline";
 
 // ── Configuration ──────────────────────────────────────────────
 const MAX_FOLLOWS = 150;
-const MIN_DELAY_SEC = 30;
-const MAX_DELAY_SEC = 90;
+const MIN_DELAY_SEC = 15;
+const MAX_DELAY_SEC = 45;
 const LOG_FILE = path.join(__dirname, "follow-log.json");
 const FOLLOW_TIMEOUT_MS = 5000;
 const SCROLL_WAIT_MS = 5000;
 const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
+const RATE_LIMIT_THRESHOLD = 3;       // consecutive failures before assuming rate limit
+const RATE_LIMIT_COOLDOWN_MIN = 15;   // minutes to wait when rate-limited
+const MAX_RATE_LIMIT_WAITS = 5;       // give up after this many cooldowns in one session
 
 // ── Types ──────────────────────────────────────────────────────
 interface FollowRecord {
@@ -154,6 +157,8 @@ async function follow(): Promise<void> {
   }
 
   const processedUsernames = new Set<string>();
+  let consecutiveFailures = 0;
+  let rateLimitWaits = 0;
 
   while (followCount < MAX_FOLLOWS) {
     const cells = await page.$$('[data-testid="cellInnerDiv"]');
@@ -203,13 +208,41 @@ async function follow(): Promise<void> {
         // Wait for confirmation
         await page.waitForTimeout(FOLLOW_TIMEOUT_MS);
         const unfollowBtn = await cell.$('[data-testid$="-unfollow"]');
-        if (!unfollowBtn) {
+        let confirmed = !!unfollowBtn;
+        if (!confirmed) {
           const newText = await followButton.innerText().catch(() => "");
-          if (newText !== "Following" && newText !== "Pending") {
-            console.warn(`  Follow confirmation timed out for @${username}, skipping.`);
-            continue;
-          }
+          confirmed = newText === "Following" || newText === "Pending";
         }
+
+        if (!confirmed) {
+          consecutiveFailures++;
+          console.warn(`  Follow failed for @${username} (${consecutiveFailures} in a row)`);
+
+          // Detect rate limiting: multiple consecutive failures
+          if (consecutiveFailures >= RATE_LIMIT_THRESHOLD) {
+            rateLimitWaits++;
+            if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
+              console.log(`\n  Hit rate limit ${MAX_RATE_LIMIT_WAITS} times this session. Stopping to be safe.`);
+              break;
+            }
+            console.log(`\n  Looks like we're rate-limited. Waiting ${RATE_LIMIT_COOLDOWN_MIN} minutes...`);
+            console.log(`  (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS} cooldowns used this session)`);
+            await page.waitForTimeout(RATE_LIMIT_COOLDOWN_MIN * 60 * 1000);
+            consecutiveFailures = 0;
+
+            // Reload the page to get fresh state
+            console.log("  Reloading followers page...");
+            await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+            await page.waitForTimeout(3000);
+            processedUsernames.clear();
+            // Re-add already-followed users so we still skip them
+            for (const u of followedSet) processedUsernames.add(u);
+          }
+          continue;
+        }
+
+        // Success — reset failure counter
+        consecutiveFailures = 0;
 
         // Log the follow
         followCount++;
@@ -229,9 +262,13 @@ async function follow(): Promise<void> {
         }
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
+        consecutiveFailures++;
         continue;
       }
     }
+
+    // If we broke out of the inner loop due to rate limit max, break outer too
+    if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) break;
 
     // Scroll for more followers
     if (!foundNew) {
