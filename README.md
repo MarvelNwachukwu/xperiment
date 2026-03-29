@@ -56,6 +56,21 @@ A few things it handles:
 - If X shows a popup or dialog, it tries to dismiss it and keep going
 - It scrolls down automatically to load more followers as it goes
 
+### Flags
+
+**`--following`** -- By default the script pulls from the target's *followers* list. Add this flag to pull from their *following* list instead. Useful when the account you're targeting follows a lot of relevant people but doesn't have many followers itself.
+
+**`--tech-only`** -- Only follow accounts whose bio contains at least one tech-related keyword. Uses the same ~70-keyword list as the unfollow scanner (job titles, domains, technologies, etc.). The match is case-insensitive. Anyone without a recognizable tech bio gets skipped entirely.
+
+Both flags can be combined. Here are all four variations:
+
+```
+npm run follow -- @handle                          # Follow from followers page (default)
+npm run follow -- @handle --following              # Follow from following page
+npm run follow -- @handle --tech-only              # Only tech accounts from followers
+npm run follow -- @handle --following --tech-only  # Only tech accounts from following
+```
+
 ### Rate limiting
 
 X will rate-limit you after roughly 15-20 follows in a row. There's no way around this. What the script does is detect it and deal with it automatically.
@@ -147,10 +162,13 @@ In `follow-bot.ts`:
 - `RATE_LIMIT_THRESHOLD` -- how many consecutive failures before assuming rate limit (default: 3)
 - `RATE_LIMIT_COOLDOWN_MIN` -- how long to wait when rate-limited, in minutes (default: 15)
 - `MAX_RATE_LIMIT_WAITS` -- how many cooldowns before giving up for the session (default: 5)
+- `TECH_KEYWORDS` -- the list of keywords used to filter bios when `--tech-only` is passed
 
 In `unfollow-bot.ts`:
 - `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between unfollows (default: 15-45 seconds)
 - `TECH_KEYWORDS` -- the list of keywords used to classify bios
+
+Note: `TECH_KEYWORDS` is defined separately in both `follow-bot.ts` and `unfollow-bot.ts` -- they are not shared. If you edit the keyword list in one file, update the other one too.
 
 ## Files the scripts create
 
