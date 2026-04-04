@@ -93,13 +93,15 @@ function startHeartbeat(state: ChainState): NodeJS.Timeout {
 // ── Chain Loop ────────────────────────────────────────────────
 async function runChain(state: ChainState): Promise<void> {
   const context = await launchBrowser();
-  const page = await context.newPage();
   const heartbeat = startHeartbeat(state);
 
   try {
     while (true) {
       const target = state.currentTarget;
       const pageUrl = `https://x.com/${target}/following`;
+
+      // Fresh page per hop to avoid memory accumulation over long runs
+      const page = await context.newPage();
 
       chainLog(`Chain depth ${state.chainDepth}: following tech accounts from @${target}'s following`);
       state.status = "running";
@@ -117,6 +119,7 @@ async function runChain(state: ChainState): Promise<void> {
         });
       } catch (err) {
         chainLog(`Engine error on @${target}: ${err}. Saving state and exiting.`);
+        await page.close().catch(() => {});
         state.status = "paused";
         saveChainState(state);
         break;
@@ -131,6 +134,9 @@ async function runChain(state: ChainState): Promise<void> {
       state.totalFollowed += result.followCount;
 
       chainLog(`Finished @${target}: ${result.followCount} followed (reason: ${result.reason}). Total: ${state.totalFollowed}`);
+
+      // Close page to free memory before next hop
+      await page.close();
 
       if (result.reason === "rate_limited") {
         chainLog("Rate-limited. Saving state and exiting for cron restart.");
