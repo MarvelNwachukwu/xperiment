@@ -1,26 +1,40 @@
 import { chromium } from "playwright";
-import type { Page, BrowserContext } from "playwright";
+import type { Page, BrowserContext, ElementHandle } from "playwright";
 import * as fs from "fs";
-import * as path from "path";
 import * as readline from "readline";
-
-// ── Configuration ──────────────────────────────────────────────
-const MAX_FOLLOWS = 150;
-const MIN_DELAY_SEC = 15;
-const MAX_DELAY_SEC = 45;
-const LOG_FILE = path.join(__dirname, "follow-log.json");
-const FOLLOW_TIMEOUT_MS = 5000;
-const SCROLL_WAIT_MS = 5000;
-const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
-const RATE_LIMIT_THRESHOLD = 3;       // consecutive failures before assuming rate limit
-const RATE_LIMIT_COOLDOWN_MIN = 15;   // minutes to wait when rate-limited
-const MAX_RATE_LIMIT_WAITS = 5;       // give up after this many cooldowns in one session
+import {
+  LOG_FILE,
+  PROFILE_DIR,
+  MIN_DELAY_SEC,
+  MAX_DELAY_SEC,
+  FOLLOW_TIMEOUT_MS,
+  SCROLL_WAIT_MS,
+  RATE_LIMIT_THRESHOLD,
+  RATE_LIMIT_COOLDOWN_MIN,
+  MAX_RATE_LIMIT_WAITS,
+} from "./config";
 
 // ── Types ──────────────────────────────────────────────────────
-interface FollowRecord {
+export interface FollowRecord {
   username: string;
   target: string;
+  source: "followers" | "following";
   timestamp: string;
+}
+
+export interface FollowResult {
+  followCount: number;
+  followedUsers: string[];
+  reason: "exhausted" | "dry_streak" | "rate_limited";
+}
+
+export interface FollowEngineOptions {
+  page: Page;
+  target: string;
+  pageUrl: string;
+  bioFilter?: (bio: string) => boolean;
+  source: "followers" | "following";
+  dryStreakThreshold?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -40,7 +54,7 @@ function randomDelay(minSec: number, maxSec: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function loadLog(): FollowRecord[] {
+export function loadLog(): FollowRecord[] {
   if (!fs.existsSync(LOG_FILE)) return [];
   try {
     return JSON.parse(fs.readFileSync(LOG_FILE, "utf-8"));
@@ -49,11 +63,11 @@ function loadLog(): FollowRecord[] {
   }
 }
 
-function saveLog(records: FollowRecord[]): void {
+export function saveLog(records: FollowRecord[]): void {
   fs.writeFileSync(LOG_FILE, JSON.stringify(records, null, 2));
 }
 
-async function dismissPopups(page: Page): Promise<void> {
+export async function dismissPopups(page: Page): Promise<void> {
   const hasDialog = await page.$('div[role="dialog"], [data-testid="sheetDialog"]');
   if (!hasDialog) return;
 
@@ -77,11 +91,53 @@ async function dismissPopups(page: Page): Promise<void> {
   }
 }
 
+// ── Tech Filtering ────────────────────────────────────────────
+const TECH_KEYWORDS = [
+  // Roles
+  "developer", "dev", "engineer", "programmer", "coder", "hacker",
+  "founder", "cto", "ceo", "co-founder", "cofounder",
+  "designer", "ux", "ui",
+  // Domains
+  "software", "web3", "crypto", "blockchain", "bitcoin", "btc", "eth",
+  "ethereum", "defi", "nft", "ai", "ml", "machine learning",
+  "artificial intelligence", "data science", "data engineer",
+  "devops", "sre", "cloud", "aws", "gcp", "azure",
+  "cybersecurity", "infosec", "security",
+  "frontend", "backend", "fullstack", "full-stack", "full stack",
+  "mobile", "ios", "android", "flutter", "react native",
+  // Technologies
+  "javascript", "typescript", "python", "rust", "golang", "solidity",
+  "react", "nextjs", "next.js", "vue", "angular", "svelte",
+  "node", "nodejs", "deno", "bun",
+  "docker", "kubernetes", "k8s", "terraform",
+  "postgres", "mongodb", "redis", "graphql",
+  "open source", "oss", "github", "api",
+  // Startup / VC
+  "startup", "saas", "b2b", "yc", "ycombinator", "techstars",
+  "venture", "investor", "angel",
+  // Tech media / community
+  "tech", "hackathon", "buildinpublic", "building in public",
+  "indie hacker", "indiehacker", "shipfast",
+];
+
+async function extractBio(cell: ElementHandle): Promise<string> {
+  const bioEl = await cell.$('[data-testid="UserCell"] > div > div:last-child');
+  if (bioEl) {
+    return (await bioEl.innerText().catch(() => "")).slice(0, 200);
+  }
+  return (await cell.innerText().catch(() => "")).slice(0, 200);
+}
+
+export function matchesTechKeywords(bio: string): boolean {
+  const lower = bio.toLowerCase();
+  return TECH_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 // ── Browser Launch ─────────────────────────────────────────────
 // Uses a persistent Chrome profile so cookies, sessions, and browser
 // state survive across runs — no separate cookies.json needed.
 // Also hides automation flags that X detects.
-async function launchBrowser(): Promise<BrowserContext> {
+export async function launchBrowser(): Promise<BrowserContext> {
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
     channel: "chrome",
@@ -115,59 +171,49 @@ async function login(): Promise<void> {
   await context.close();
 }
 
-// ── Follow Command ─────────────────────────────────────────────
-async function follow(): Promise<void> {
-  let target = process.argv[3];
-  if (!target) {
-    console.error("Usage: tsx follow-bot.ts follow @targethandle");
-    process.exit(1);
-  }
-  target = target.replace(/^@/, "");
+// ── Follow Engine ─────────────────────────────────────────────
+export async function followFromPage(options: FollowEngineOptions): Promise<FollowResult> {
+  const { page, target, pageUrl, bioFilter, source, dryStreakThreshold } = options;
 
-  const context = await launchBrowser();
-  const page = await context.newPage();
-
-  // Navigate to followers page
-  console.log(`Navigating to https://x.com/${target}/followers ...`);
-  await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+  // Navigate to target page
+  console.log(`Navigating to ${pageUrl} ...`);
+  await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
 
   // Wait for page to settle
   await page.waitForTimeout(3000);
 
   // Check if redirected to login (not logged in)
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-    console.error("Not logged in. Run `npm run login` first.");
-    await context.close();
-    process.exit(1);
+    throw new Error("Not logged in. Run `npm run login` first.");
   }
 
-  console.log(`Loaded followers page for @${target}`);
+  console.log(`Loaded ${source} page for @${target}`);
 
   // Load follow log (kept in memory for the session)
   const logRecords = loadLog();
   const followedSet = new Set(logRecords.map((r) => r.username));
   let followCount = 0;
+  const followedUsers: string[] = [];
+  let dryStreak = 0;
 
-  // Wait for follower cards to appear
-  const initialCards = await page.waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 }).catch(() => null);
+  // Wait for user cards to appear
+  const initialCards = await page
+    .waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 })
+    .catch(() => null);
   if (!initialCards) {
-    console.error("No follower cards found. The page may not have loaded correctly.");
-    await context.close();
-    process.exit(1);
+    throw new Error(`No ${source} cards found. The page may not have loaded correctly.`);
   }
 
   const processedUsernames = new Set<string>();
   let consecutiveFailures = 0;
   let rateLimitWaits = 0;
 
-  while (followCount < MAX_FOLLOWS) {
+  while (true) {
     const cells = await page.$$('[data-testid="cellInnerDiv"]');
 
     let foundNew = false;
 
     for (const cell of cells) {
-      if (followCount >= MAX_FOLLOWS) break;
-
       const userLink = await cell.$('a[href^="/"][role="link"]');
       if (!userLink) continue;
 
@@ -199,6 +245,21 @@ async function follow(): Promise<void> {
         continue;
       }
 
+      // Skip check 3: bio filter (--tech-only)
+      if (bioFilter) {
+        const rawBio = await extractBio(cell);
+        const bio = rawBio.replace(`@${username}`, "").trim();
+        if (!bioFilter(bio)) {
+          dryStreak++;
+          console.log(`  Skipping @${username} (bio doesn't match filter) [dry streak: ${dryStreak}]`);
+          if (dryStreakThreshold && dryStreak >= dryStreakThreshold) {
+            console.log(`  Dry streak threshold (${dryStreakThreshold}) reached. Chaining to next target.`);
+            return { followCount, followedUsers, reason: "dry_streak" };
+          }
+          continue;
+        }
+      }
+
       // Click Follow
       try {
         await dismissPopups(page);
@@ -223,7 +284,7 @@ async function follow(): Promise<void> {
             rateLimitWaits++;
             if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
               console.log(`\n  Hit rate limit ${MAX_RATE_LIMIT_WAITS} times this session. Stopping to be safe.`);
-              break;
+              return { followCount, followedUsers, reason: "rate_limited" };
             }
             console.log(`\n  Looks like we're rate-limited. Waiting ${RATE_LIMIT_COOLDOWN_MIN} minutes...`);
             console.log(`  (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS} cooldowns used this session)`);
@@ -231,8 +292,8 @@ async function follow(): Promise<void> {
             consecutiveFailures = 0;
 
             // Reload the page to get fresh state
-            console.log("  Reloading followers page...");
-            await page.goto(`https://x.com/${target}/followers`, { waitUntil: "domcontentloaded" });
+            console.log(`  Reloading ${source} page...`);
+            await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
             await page.waitForTimeout(3000);
             processedUsernames.clear();
             // Re-add already-followed users so we still skip them
@@ -245,23 +306,24 @@ async function follow(): Promise<void> {
 
         // Success — reset failure counter
         consecutiveFailures = 0;
+        dryStreak = 0;
 
         // Log the follow
         followCount++;
         const record: FollowRecord = {
           username,
           target,
+          source,
           timestamp: new Date().toISOString(),
         };
         logRecords.push(record);
         saveLog(logRecords);
         followedSet.add(username);
+        followedUsers.push(username);
 
-        console.log(`  ✓ Followed @${username} (${followCount}/${MAX_FOLLOWS})`);
+        console.log(`  ✓ Followed @${username} (${followCount} this session)`);
 
-        if (followCount < MAX_FOLLOWS) {
-          await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
-        }
+        await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
         consecutiveFailures++;
@@ -269,12 +331,9 @@ async function follow(): Promise<void> {
       }
     }
 
-    // If we broke out of the inner loop due to rate limit max, break outer too
-    if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) break;
-
-    // Scroll for more followers
+    // Scroll for more users
     if (!foundNew) {
-      console.log("  Scrolling for more followers...");
+      console.log(`  Scrolling for more ${source}...`);
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 3));
 
       await page.waitForTimeout(SCROLL_WAIT_MS);
@@ -294,34 +353,69 @@ async function follow(): Promise<void> {
       }
 
       if (!hasNewUsers) {
-        console.log("  No more followers to load. Ending session.");
-        break;
+        console.log(`  No more ${source} to load. Ending session.`);
+        return { followCount, followedUsers, reason: "exhausted" };
       }
     }
   }
 
-  console.log(`\nSession complete. Followed ${followCount} users.`);
+  return { followCount, followedUsers, reason: "exhausted" };
+}
+
+// ── Follow Command ─────────────────────────────────────────────
+async function follow(): Promise<void> {
+  const args = process.argv.slice(3);
+  const targetArg = args.find((a) => a.startsWith("@") || (!a.startsWith("-") && a !== "follow"));
+  if (!targetArg) {
+    console.error("Usage: tsx follow-bot.ts follow @targethandle [--following] [--tech-only]");
+    process.exit(1);
+  }
+  const target = targetArg.replace(/^@/, "");
+
+  const useFollowing = args.includes("--following");
+  const techOnly = args.includes("--tech-only");
+
+  const source: "followers" | "following" = useFollowing ? "following" : "followers";
+  const pageUrl = `https://x.com/${target}/${source}`;
+
+  const context = await launchBrowser();
+  const page = await context.newPage();
+
+  const result = await followFromPage({
+    page,
+    target,
+    pageUrl,
+    source,
+    bioFilter: techOnly ? matchesTechKeywords : undefined,
+  });
+
+  console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
   await context.close();
 }
 
-// ── Main ───────────────────────────────────────────────────────
-const command = process.argv[2];
+// ── Main (only runs when invoked directly) ────────────────────
+if (require.main === module) {
+  const command = process.argv[2];
 
-if (command === "login") {
-  login().catch((err) => {
-    console.error("Login failed:", err);
+  if (command === "login") {
+    login().catch((err) => {
+      console.error("Login failed:", err);
+      process.exit(1);
+    });
+  } else if (command === "follow") {
+    follow().catch((err) => {
+      console.error("Follow failed:", err);
+      process.exit(1);
+    });
+  } else {
+    console.error(
+      "Usage:\n" +
+      "  npm run login                                — Log in to X and save cookies\n" +
+      "  npm run follow -- @handle                    — Follow users from @handle's followers\n" +
+      "  npm run follow -- @handle --following         — Follow from @handle's following list\n" +
+      "  npm run follow -- @handle --tech-only         — Only follow tech accounts\n" +
+      "  npm run follow -- @handle --following --tech-only — Tech accounts from following list"
+    );
     process.exit(1);
-  });
-} else if (command === "follow") {
-  follow().catch((err) => {
-    console.error("Follow failed:", err);
-    process.exit(1);
-  });
-} else {
-  console.error(
-    "Usage:\n" +
-    "  npm run login              — Log in to X and save cookies\n" +
-    "  npm run follow -- @handle  — Follow users from @handle's followers page"
-  );
-  process.exit(1);
+  }
 }
