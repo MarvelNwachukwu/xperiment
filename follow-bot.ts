@@ -1,20 +1,21 @@
 import { chromium } from "playwright";
 import type { Page, BrowserContext, ElementHandle } from "playwright";
 import * as fs from "fs";
-import * as path from "path";
 import * as readline from "readline";
+import {
+  LOG_FILE,
+  PROFILE_DIR,
+  MIN_DELAY_SEC,
+  MAX_DELAY_SEC,
+  FOLLOW_TIMEOUT_MS,
+  SCROLL_WAIT_MS,
+  RATE_LIMIT_THRESHOLD,
+  RATE_LIMIT_COOLDOWN_MIN,
+  MAX_RATE_LIMIT_WAITS,
+} from "./config";
 
 // ── Configuration ──────────────────────────────────────────────
 const MAX_FOLLOWS = 150;
-const MIN_DELAY_SEC = 15;
-const MAX_DELAY_SEC = 45;
-const LOG_FILE = path.join(__dirname, "follow-log.json");
-const FOLLOW_TIMEOUT_MS = 5000;
-const SCROLL_WAIT_MS = 5000;
-const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
-const RATE_LIMIT_THRESHOLD = 3;       // consecutive failures before assuming rate limit
-const RATE_LIMIT_COOLDOWN_MIN = 15;   // minutes to wait when rate-limited
-const MAX_RATE_LIMIT_WAITS = 5;       // give up after this many cooldowns in one session
 
 // ── Types ──────────────────────────────────────────────────────
 interface FollowRecord {
