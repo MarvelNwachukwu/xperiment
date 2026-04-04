@@ -6,7 +6,8 @@
     "login": "tsx follow-bot.ts login",
     "follow": "tsx follow-bot.ts follow",
     "scan": "tsx unfollow-bot.ts scan",
-    "unfollow": "tsx unfollow-bot.ts unfollow"
+    "unfollow": "tsx unfollow-bot.ts unfollow",
+    "chain": "tsx chain-runner.ts"
   },
   "devDependencies": {
     "playwright": "^1.51.0",
