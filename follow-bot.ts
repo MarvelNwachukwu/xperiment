@@ -14,23 +14,27 @@ import {
   MAX_RATE_LIMIT_WAITS,
 } from "./config";
 
-// ── Configuration ──────────────────────────────────────────────
-const MAX_FOLLOWS = 150;
-
 // ── Types ──────────────────────────────────────────────────────
-interface FollowRecord {
+export interface FollowRecord {
   username: string;
   target: string;
   source: "followers" | "following";
   timestamp: string;
 }
 
-interface FollowEngineOptions {
+export interface FollowResult {
+  followCount: number;
+  followedUsers: string[];
+  reason: "exhausted" | "dry_streak" | "rate_limited";
+}
+
+export interface FollowEngineOptions {
   page: Page;
   target: string;
   pageUrl: string;
   bioFilter?: (bio: string) => boolean;
   source: "followers" | "following";
+  dryStreakThreshold?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -50,7 +54,7 @@ function randomDelay(minSec: number, maxSec: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function loadLog(): FollowRecord[] {
+export function loadLog(): FollowRecord[] {
   if (!fs.existsSync(LOG_FILE)) return [];
   try {
     return JSON.parse(fs.readFileSync(LOG_FILE, "utf-8"));
@@ -59,11 +63,11 @@ function loadLog(): FollowRecord[] {
   }
 }
 
-function saveLog(records: FollowRecord[]): void {
+export function saveLog(records: FollowRecord[]): void {
   fs.writeFileSync(LOG_FILE, JSON.stringify(records, null, 2));
 }
 
-async function dismissPopups(page: Page): Promise<void> {
+export async function dismissPopups(page: Page): Promise<void> {
   const hasDialog = await page.$('div[role="dialog"], [data-testid="sheetDialog"]');
   if (!hasDialog) return;
 
@@ -124,7 +128,7 @@ async function extractBio(cell: ElementHandle): Promise<string> {
   return (await cell.innerText().catch(() => "")).slice(0, 200);
 }
 
-function matchesTechKeywords(bio: string): boolean {
+export function matchesTechKeywords(bio: string): boolean {
   const lower = bio.toLowerCase();
   return TECH_KEYWORDS.some((kw) => lower.includes(kw));
 }
@@ -133,7 +137,7 @@ function matchesTechKeywords(bio: string): boolean {
 // Uses a persistent Chrome profile so cookies, sessions, and browser
 // state survive across runs — no separate cookies.json needed.
 // Also hides automation flags that X detects.
-async function launchBrowser(): Promise<BrowserContext> {
+export async function launchBrowser(): Promise<BrowserContext> {
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
     channel: "chrome",
@@ -168,8 +172,8 @@ async function login(): Promise<void> {
 }
 
 // ── Follow Engine ─────────────────────────────────────────────
-async function followFromPage(options: FollowEngineOptions): Promise<number> {
-  const { page, target, pageUrl, bioFilter, source } = options;
+export async function followFromPage(options: FollowEngineOptions): Promise<FollowResult> {
+  const { page, target, pageUrl, bioFilter, source, dryStreakThreshold } = options;
 
   // Navigate to target page
   console.log(`Navigating to ${pageUrl} ...`);
@@ -189,6 +193,8 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
   const logRecords = loadLog();
   const followedSet = new Set(logRecords.map((r) => r.username));
   let followCount = 0;
+  const followedUsers: string[] = [];
+  let dryStreak = 0;
 
   // Wait for user cards to appear
   const initialCards = await page
@@ -202,14 +208,12 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
   let consecutiveFailures = 0;
   let rateLimitWaits = 0;
 
-  while (followCount < MAX_FOLLOWS) {
+  while (true) {
     const cells = await page.$$('[data-testid="cellInnerDiv"]');
 
     let foundNew = false;
 
     for (const cell of cells) {
-      if (followCount >= MAX_FOLLOWS) break;
-
       const userLink = await cell.$('a[href^="/"][role="link"]');
       if (!userLink) continue;
 
@@ -246,7 +250,12 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
         const rawBio = await extractBio(cell);
         const bio = rawBio.replace(`@${username}`, "").trim();
         if (!bioFilter(bio)) {
-          console.log(`  Skipping @${username} (bio doesn't match filter)`);
+          dryStreak++;
+          console.log(`  Skipping @${username} (bio doesn't match filter) [dry streak: ${dryStreak}]`);
+          if (dryStreakThreshold && dryStreak >= dryStreakThreshold) {
+            console.log(`  Dry streak threshold (${dryStreakThreshold}) reached. Chaining to next target.`);
+            return { followCount, followedUsers, reason: "dry_streak" };
+          }
           continue;
         }
       }
@@ -275,7 +284,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
             rateLimitWaits++;
             if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
               console.log(`\n  Hit rate limit ${MAX_RATE_LIMIT_WAITS} times this session. Stopping to be safe.`);
-              break;
+              return { followCount, followedUsers, reason: "rate_limited" };
             }
             console.log(`\n  Looks like we're rate-limited. Waiting ${RATE_LIMIT_COOLDOWN_MIN} minutes...`);
             console.log(`  (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS} cooldowns used this session)`);
@@ -297,6 +306,7 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
 
         // Success — reset failure counter
         consecutiveFailures = 0;
+        dryStreak = 0;
 
         // Log the follow
         followCount++;
@@ -309,21 +319,17 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
         logRecords.push(record);
         saveLog(logRecords);
         followedSet.add(username);
+        followedUsers.push(username);
 
-        console.log(`  ✓ Followed @${username} (${followCount}/${MAX_FOLLOWS})`);
+        console.log(`  ✓ Followed @${username} (${followCount} this session)`);
 
-        if (followCount < MAX_FOLLOWS) {
-          await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
-        }
+        await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
         consecutiveFailures++;
         continue;
       }
     }
-
-    // If we broke out of the inner loop due to rate limit max, break outer too
-    if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) break;
 
     // Scroll for more users
     if (!foundNew) {
@@ -348,12 +354,12 @@ async function followFromPage(options: FollowEngineOptions): Promise<number> {
 
       if (!hasNewUsers) {
         console.log(`  No more ${source} to load. Ending session.`);
-        break;
+        return { followCount, followedUsers, reason: "exhausted" };
       }
     }
   }
 
-  return followCount;
+  return { followCount, followedUsers, reason: "exhausted" };
 }
 
 // ── Follow Command ─────────────────────────────────────────────
@@ -375,7 +381,7 @@ async function follow(): Promise<void> {
   const context = await launchBrowser();
   const page = await context.newPage();
 
-  const followCount = await followFromPage({
+  const result = await followFromPage({
     page,
     target,
     pageUrl,
@@ -383,7 +389,7 @@ async function follow(): Promise<void> {
     bioFilter: techOnly ? matchesTechKeywords : undefined,
   });
 
-  console.log(`\nSession complete. Followed ${followCount} users.`);
+  console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
   await context.close();
 }
 
