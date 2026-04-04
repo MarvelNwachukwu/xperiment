@@ -47,7 +47,7 @@ Pick a target account whose followers you want to follow. Say you want to follow
 npm run follow -- @somedev
 ```
 
-The script opens Chrome, goes to that account's followers page, and starts clicking Follow on each person. It waits 15-45 seconds between each one (random) to avoid getting rate-limited. It stops after 150 follows or when it runs out of followers to process.
+The script opens Chrome, goes to that account's followers page, and starts clicking Follow on each person. It waits 15-45 seconds between each one (random) to avoid getting rate-limited. It stops when it runs out of followers to process.
 
 A few things it handles:
 
@@ -77,7 +77,7 @@ X will rate-limit you after roughly 15-20 follows in a row. There's no way aroun
 
 When a follow fails (the button doesn't change to "Following"), the script keeps count. If 3 fail in a row, it assumes you've been rate-limited and pauses for 15 minutes. After the cooldown, it reloads the page and picks up where it left off. No users get skipped or lost.
 
-In practice a session looks something like: follow 15 people, rate-limited, wait 15 min, follow another 15, rate-limited, wait 15 min, and so on. It'll do this up to 5 times before calling it quits for the session. So a full 150-follow run takes a few hours with the waiting, but it gets there without you having to babysit it.
+In practice a session looks something like: follow 15 people, rate-limited, wait 15 min, follow another 15, rate-limited, wait 15 min, and so on. It'll do this up to 5 times before calling it quits for the session. So a full session takes a few hours with the waiting, but it gets there without you having to babysit it.
 
 15-45 seconds between follows is the delay sweet spot I landed on. I tried 10-second intervals early on and got rate-limited almost immediately.
 
@@ -132,6 +132,58 @@ npm run unfollow
 
 This reads the candidates file and unfollows everyone still marked `true`. Same deal as the follow bot: random delays between each one, picks up where it left off if you stop it, logs everything to `unfollow-log.json`.
 
+## Chain Mode (Long-Running)
+
+Chain mode follows tech accounts indefinitely by automatically hopping to new targets from the social graph.
+
+### Usage
+
+```bash
+# Start a new chain from a seed account
+npm run chain -- @vitalik
+
+# Resume after crash or restart
+npm run chain -- --resume
+```
+
+### How It Works
+
+1. Starts following tech accounts from the seed account's following list
+2. When the list is exhausted or 20 consecutive non-tech users are found (dry streak), picks a random previously-followed tech account as the next target
+3. Continues chaining through the social graph indefinitely
+4. Persists state to `chain-state.json` — survives crashes and restarts
+
+### Cron Watchdog
+
+For 12+ hour unattended runs, set up the watchdog via cron:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (checks every 5 minutes):
+*/5 * * * * /path/to/project/watchdog.sh
+```
+
+The watchdog:
+- Checks if the heartbeat in `chain-state.json` is stale (>10 minutes)
+- Kills any hung processes
+- Restarts with `--resume`
+
+### Configuration
+
+All constants are centralized in `config.ts`:
+
+| Setting | Default | Description |
+|---|---|---|
+| `DRY_STREAK_THRESHOLD` | 20 | Non-tech skips before chaining to next target |
+| `HEARTBEAT_INTERVAL_MS` | 120000 | How often heartbeat is written (2 min) |
+| `MIN_DELAY_SEC` | 15 | Min seconds between follows |
+| `MAX_DELAY_SEC` | 45 | Max seconds between follows |
+| `RATE_LIMIT_THRESHOLD` | 3 | Consecutive failures before rate-limit cooldown |
+| `RATE_LIMIT_COOLDOWN_MIN` | 15 | Minutes to wait when rate-limited |
+| `MAX_RATE_LIMIT_WAITS` | 5 | Max cooldowns before exiting (cron restarts) |
+
 ## The keyword list
 
 The scan classifies accounts by checking their bio against a list of ~70 keywords. These cover:
@@ -154,21 +206,16 @@ If you crank the delays too low or follow too many people in one sitting, you'll
 
 ## Configuration
 
-The numbers are defined at the top of each script file. To change them, open the `.ts` file and edit the constants:
+Most constants are centralized in `config.ts`. To change them, open that file and edit the values:
 
-In `follow-bot.ts`:
-- `MAX_FOLLOWS` -- how many people to follow before stopping (default: 150)
-- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows (default: 15-45 seconds)
+- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows/unfollows (default: 15-45 seconds)
 - `RATE_LIMIT_THRESHOLD` -- how many consecutive failures before assuming rate limit (default: 3)
 - `RATE_LIMIT_COOLDOWN_MIN` -- how long to wait when rate-limited, in minutes (default: 15)
 - `MAX_RATE_LIMIT_WAITS` -- how many cooldowns before giving up for the session (default: 5)
-- `TECH_KEYWORDS` -- the list of keywords used to filter bios when `--tech-only` is passed
+- `DRY_STREAK_THRESHOLD` -- non-tech skips before chaining to the next target in chain mode (default: 20)
+- `HEARTBEAT_INTERVAL_MS` -- how often the chain runner writes a heartbeat (default: 2 minutes)
 
-In `unfollow-bot.ts`:
-- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between unfollows (default: 15-45 seconds)
-- `TECH_KEYWORDS` -- the list of keywords used to classify bios
-
-Note: `TECH_KEYWORDS` is defined separately in both `follow-bot.ts` and `unfollow-bot.ts` -- they are not shared. If you edit the keyword list in one file, update the other one too.
+`TECH_KEYWORDS` is defined separately in both `follow-bot.ts` and `unfollow-bot.ts` -- they are not shared. If you edit the keyword list in one file, update the other one too.
 
 ## Files the scripts create
 
@@ -178,6 +225,8 @@ These are all gitignored:
 - `follow-log.json` -- record of every account you've followed
 - `unfollow-candidates.json` -- the scan results (your review list)
 - `unfollow-log.json` -- record of every account you've unfollowed
+- `chain-state.json` -- chain mode state (current target, followed list, heartbeat)
+- `chain-log.txt` -- append-only log of chain mode activity
 
 ## If something goes wrong
 
