@@ -393,27 +393,29 @@ async function follow(): Promise<void> {
   await context.close();
 }
 
-// ── Main ───────────────────────────────────────────────────────
-const command = process.argv[2];
+// ── Main (only runs when invoked directly) ────────────────────
+if (require.main === module) {
+  const command = process.argv[2];
 
-if (command === "login") {
-  login().catch((err) => {
-    console.error("Login failed:", err);
+  if (command === "login") {
+    login().catch((err) => {
+      console.error("Login failed:", err);
+      process.exit(1);
+    });
+  } else if (command === "follow") {
+    follow().catch((err) => {
+      console.error("Follow failed:", err);
+      process.exit(1);
+    });
+  } else {
+    console.error(
+      "Usage:\n" +
+      "  npm run login                                — Log in to X and save cookies\n" +
+      "  npm run follow -- @handle                    — Follow users from @handle's followers\n" +
+      "  npm run follow -- @handle --following         — Follow from @handle's following list\n" +
+      "  npm run follow -- @handle --tech-only         — Only follow tech accounts\n" +
+      "  npm run follow -- @handle --following --tech-only — Tech accounts from following list"
+    );
     process.exit(1);
-  });
-} else if (command === "follow") {
-  follow().catch((err) => {
-    console.error("Follow failed:", err);
-    process.exit(1);
-  });
-} else {
-  console.error(
-    "Usage:\n" +
-    "  npm run login                                — Log in to X and save cookies\n" +
-    "  npm run follow -- @handle                    — Follow users from @handle's followers\n" +
-    "  npm run follow -- @handle --following         — Follow from @handle's following list\n" +
-    "  npm run follow -- @handle --tech-only         — Only follow tech accounts\n" +
-    "  npm run follow -- @handle --following --tech-only — Tech accounts from following list"
-  );
-  process.exit(1);
+  }
 }
