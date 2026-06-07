@@ -6,3 +6,6 @@ unfollow-log.json
 .chrome-profile/
 chain-state.json
 chain-log.txt
+following.json
+profiles.json
+candidates.json
