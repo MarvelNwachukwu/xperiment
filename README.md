@@ -208,6 +208,60 @@ All constants are centralized in `config.ts`:
 | `RATE_LIMIT_COOLDOWN_MIN` | 15 | Minutes to wait when rate-limited |
 | `MAX_RATE_LIMIT_WAITS` | 5 | Max cooldowns before exiting (cron restarts) |
 
+## Outreach Profiles (prospect.ts)
+
+`prospect.ts` builds a current picture of who you follow, enriches those accounts into deep profiles, and filters down to a decision-maker shortlist that a separate DM-writing AI can work from.
+
+### Pipeline
+
+```
+npm run prospect:sync    → following.json        (who you follow right now)
+npm run prospect:enrich  → profiles.json         (deep data per account)
+npm run prospect:filter  → candidates.json       (decision-maker shortlist)
+                           [writer AI]
+                        → messages.json          (DM drafts, external step)
+                           [future dm-bot.ts]    (sends the messages)
+```
+
+`prepare` chains all three steps in order: sync → enrich → filter.
+
+### Usage
+
+```bash
+# Sync your following list
+npm run prospect:sync -- @yourhandle
+
+# Enrich all accounts in following.json
+npm run prospect:enrich
+
+# Enrich only specific handles
+npm run prospect:enrich -- --handles @a,@b
+
+# Filter profiles.json down to candidates
+npm run prospect:filter
+
+# Run the full pipeline in one command
+npm run prospect:prepare -- @yourhandle
+```
+
+### following.json
+
+`following.json` is the canonical synced set of who you follow -- it is separate from `follow-log.json`, which is the bot's action log of every follow it has made. On each sync, accounts are merged: `firstSeen` is preserved from the first time an account was synced, `lastSynced` is refreshed to now. Accounts that were in a previous sync but are missing from the current scrape are kept in the file with a `stale` flag rather than deleted, so you don't silently lose history.
+
+### Enrichment
+
+Enrichment pulls deep profile data for each account: bio, follower and following counts, location, website, join date, verified status, parsed role and company (inferred from bio), pinned tweet, and roughly 5 recent tweets.
+
+It is resumable -- accounts that already have a `profiles.json` entry are skipped. It runs with the same burst pacing as the follow bot and respects a daily cap (`ENRICH_MAX_PER_DAY`, default 300) to stay well under X's rate limits.
+
+### Filtering
+
+Filtering is two-stage. Accounts with strong title signals (founder, CTO, CEO, head of, VP, etc.) land in the `strong` bucket. Accounts with ambiguous signals (lead, director, principal, etc.) land in a `review` bucket for human triage. Each candidate record includes `matchedKeywords` so the DM-writing AI can see exactly why that person was kept.
+
+### Generated files
+
+`following.json`, `profiles.json`, `candidates.json`, and `messages.json` are all gitignored.
+
 ## The keyword list
 
 The scan classifies accounts by checking their bio against a list of ~70 keywords. These cover:

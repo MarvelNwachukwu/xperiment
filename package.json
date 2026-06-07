@@ -7,7 +7,12 @@
     "follow": "tsx follow-bot.ts follow",
     "scan": "tsx unfollow-bot.ts scan",
     "unfollow": "tsx unfollow-bot.ts unfollow",
-    "chain": "tsx chain-runner.ts"
+    "chain": "tsx chain-runner.ts",
+    "test": "tsx --test *.test.ts",
+    "prospect:sync": "tsx prospect.ts sync",
+    "prospect:enrich": "tsx prospect.ts enrich",
+    "prospect:filter": "tsx prospect.ts filter",
+    "prospect:prepare": "tsx prospect.ts prepare"
   },
   "devDependencies": {
     "playwright": "^1.51.0",
