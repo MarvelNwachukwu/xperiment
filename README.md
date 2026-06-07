@@ -139,10 +139,17 @@ Chain mode follows tech accounts indefinitely by automatically hopping to new ta
 ### Usage
 
 ```bash
-# Start a new chain from a seed account
+# Start a new chain from a seed account (safe paced: 300/day, 90–300s)
 npm run chain -- @vitalik
 
-# Resume after crash or restart
+# Override the daily cap
+npm run chain -- @vitalik --max-per-day 150
+
+# Burst mode: no daily cap, fast 15–45s delays. Higher ban risk —
+# for short, deliberate, attended runs only.
+npm run chain -- @vitalik --burst
+
+# Resume after crash or restart (always resumes in safe mode)
 npm run chain -- --resume
 ```
 
@@ -152,6 +159,13 @@ npm run chain -- --resume
 2. When the list is exhausted or 20 consecutive non-tech users are found (dry streak), picks a random previously-followed tech account as the next target
 3. Continues chaining through the social graph indefinitely
 4. Persists state to `chain-state.json` — survives crashes and restarts
+
+By default it self-paces: it stops once it has followed `MAX_FOLLOWS_PER_DAY`
+accounts in the current UTC day (counted from the follow log, so it survives
+restarts) and exits. The cron watchdog's retries are near-free until the cap
+resets at UTC midnight. This keeps you under X's ~400/day soft limit. `--resume`
+always uses safe pacing regardless of how the chain was first launched, so
+unattended cron runs never burst.
 
 ### Cron Watchdog
 
@@ -178,8 +192,10 @@ All constants are centralized in `config.ts`:
 |---|---|---|
 | `DRY_STREAK_THRESHOLD` | 20 | Non-tech skips before chaining to next target |
 | `HEARTBEAT_INTERVAL_MS` | 120000 | How often heartbeat is written (2 min) |
-| `MIN_DELAY_SEC` | 15 | Min seconds between follows |
-| `MAX_DELAY_SEC` | 45 | Max seconds between follows |
+| `MIN_DELAY_SEC` | 90 | Min seconds between follows (safe mode) |
+| `MAX_DELAY_SEC` | 300 | Max seconds between follows (safe mode) |
+| `MAX_FOLLOWS_PER_DAY` | 300 | Daily follow cap (per UTC day); `--burst` disables it |
+| `BURST_MIN_DELAY_SEC` / `BURST_MAX_DELAY_SEC` | 15 / 45 | Delay range used by `--burst` |
 | `RATE_LIMIT_THRESHOLD` | 3 | Consecutive failures before rate-limit cooldown |
 | `RATE_LIMIT_COOLDOWN_MIN` | 15 | Minutes to wait when rate-limited |
 | `MAX_RATE_LIMIT_WAITS` | 5 | Max cooldowns before exiting (cron restarts) |
@@ -208,7 +224,8 @@ If you crank the delays too low or follow too many people in one sitting, you'll
 
 Most constants are centralized in `config.ts`. To change them, open that file and edit the values:
 
-- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows/unfollows (default: 15-45 seconds)
+- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows/unfollows (default: 90-300 seconds; `--burst` uses 15-45)
+- `MAX_FOLLOWS_PER_DAY` -- daily follow cap per UTC day (default: 300; `--burst` disables it)
 - `RATE_LIMIT_THRESHOLD` -- how many consecutive failures before assuming rate limit (default: 3)
 - `RATE_LIMIT_COOLDOWN_MIN` -- how long to wait when rate-limited, in minutes (default: 15)
 - `MAX_RATE_LIMIT_WAITS` -- how many cooldowns before giving up for the session (default: 5)

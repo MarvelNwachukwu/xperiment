@@ -4,14 +4,20 @@ import {
   CHAIN_LOG_FILE,
   DRY_STREAK_THRESHOLD,
   HEARTBEAT_INTERVAL_MS,
+  MAX_FOLLOWS_PER_DAY,
+  MIN_DELAY_SEC,
+  MAX_DELAY_SEC,
+  BURST_MIN_DELAY_SEC,
+  BURST_MAX_DELAY_SEC,
 } from "./config";
 import {
   launchBrowser,
   followFromPage,
   loadLog,
+  followsToday,
   matchesTechKeywords,
 } from "./follow-bot";
-import type { FollowResult } from "./follow-bot";
+import type { FollowResult, PacingOptions } from "./follow-bot";
 
 // ── Types ─────────────────────────────────────────────────────
 interface ChainState {
@@ -91,7 +97,18 @@ function startHeartbeat(state: ChainState): NodeJS.Timeout {
 }
 
 // ── Chain Loop ────────────────────────────────────────────────
-async function runChain(state: ChainState): Promise<void> {
+async function runChain(state: ChainState, pacing: PacingOptions): Promise<void> {
+  // Don't even launch Chrome if today's budget is already spent — the cron
+  // watchdog will keep retrying, and we want those retries to be near-free
+  // until the cap resets at UTC midnight. (Skipped in burst mode: cap = ∞.)
+  const usedToday = followsToday(loadLog());
+  if (usedToday >= pacing.maxFollowsPerDay) {
+    chainLog(`Daily cap reached (${usedToday}/${pacing.maxFollowsPerDay}). Sleeping until UTC midnight.`);
+    state.status = "paused";
+    saveChainState(state);
+    return;
+  }
+
   const context = await launchBrowser();
   const heartbeat = startHeartbeat(state);
 
@@ -116,6 +133,7 @@ async function runChain(state: ChainState): Promise<void> {
           source: "following",
           bioFilter: matchesTechKeywords,
           dryStreakThreshold: DRY_STREAK_THRESHOLD,
+          pacing,
         });
       } catch (err) {
         chainLog(`Engine error on @${target}: ${err}. Saving state and exiting.`);
@@ -145,6 +163,13 @@ async function runChain(state: ChainState): Promise<void> {
         break;
       }
 
+      if (result.reason === "daily_cap") {
+        chainLog("Daily follow cap reached. Saving state and exiting until UTC midnight.");
+        state.status = "paused";
+        saveChainState(state);
+        break;
+      }
+
       // Pick next target (dry_streak or exhausted)
       const next = pickNextTarget(state);
       if (!next) {
@@ -168,9 +193,39 @@ async function runChain(state: ChainState): Promise<void> {
 }
 
 // ── CLI ───────────────────────────────────────────────────────
+function parsePacing(args: string[]): PacingOptions {
+  // Burst: no daily cap + fast delays. Deliberate manual runs only.
+  if (args.includes("--burst")) {
+    return {
+      maxFollowsPerDay: Infinity,
+      minDelaySec: BURST_MIN_DELAY_SEC,
+      maxDelaySec: BURST_MAX_DELAY_SEC,
+    };
+  }
+  // Safe long-running default, with an optional daily-cap override.
+  let maxFollowsPerDay = MAX_FOLLOWS_PER_DAY;
+  const i = args.indexOf("--max-per-day");
+  if (i !== -1) {
+    const n = Number(args[i + 1]);
+    if (!Number.isFinite(n) || n <= 0) {
+      console.error("--max-per-day requires a positive number, e.g. --max-per-day 150");
+      process.exit(1);
+    }
+    maxFollowsPerDay = n;
+  }
+  return { maxFollowsPerDay, minDelaySec: MIN_DELAY_SEC, maxDelaySec: MAX_DELAY_SEC };
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const resume = args.includes("--resume");
+  const pacing = parsePacing(args);
+
+  if (pacing.maxFollowsPerDay === Infinity) {
+    chainLog("⚠ Burst mode: daily cap OFF, fast delays. Higher ban risk — manual runs only.");
+  } else {
+    chainLog(`Pacing: ${pacing.maxFollowsPerDay}/day, ${pacing.minDelaySec}-${pacing.maxDelaySec}s between follows.`);
+  }
 
   let state: ChainState;
 
@@ -183,9 +238,20 @@ async function main(): Promise<void> {
     chainLog(`Resuming chain from @${loaded.currentTarget} (depth ${loaded.chainDepth}, total followed: ${loaded.totalFollowed})`);
     state = loaded;
   } else {
-    const targetArg = args.find((a) => a.startsWith("@") || (!a.startsWith("-") && a.length > 0));
+    // Seed = first non-flag arg (skip the value consumed by --max-per-day).
+    const maxIdx = args.indexOf("--max-per-day");
+    const targetArg = args.find(
+      (a, idx) =>
+        !a.startsWith("-") && a.length > 0 && (maxIdx === -1 || idx !== maxIdx + 1)
+    );
     if (!targetArg) {
-      console.error("Usage:\n  npm run chain -- @handle      Start a new chain\n  npm run chain -- --resume     Resume after crash");
+      console.error(
+        "Usage:\n" +
+          "  npm run chain -- @handle                 Start a new chain (safe paced)\n" +
+          "  npm run chain -- @handle --burst         Ignore daily cap, fast (manual only)\n" +
+          "  npm run chain -- @handle --max-per-day N  Override the daily cap\n" +
+          "  npm run chain -- --resume                Resume after crash/cron restart"
+      );
       process.exit(1);
     }
     const target = targetArg.replace(/^@/, "");
@@ -193,7 +259,7 @@ async function main(): Promise<void> {
     chainLog(`Starting new chain from seed @${target}`);
   }
 
-  await runChain(state);
+  await runChain(state, pacing);
 }
 
 main().catch((err) => {

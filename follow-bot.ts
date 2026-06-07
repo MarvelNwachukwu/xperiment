@@ -12,6 +12,7 @@ import {
   RATE_LIMIT_THRESHOLD,
   RATE_LIMIT_COOLDOWN_MIN,
   MAX_RATE_LIMIT_WAITS,
+  MAX_FOLLOWS_PER_DAY,
 } from "./config";
 import { matchesTechKeywords } from "./tech-filter";
 
@@ -26,7 +27,15 @@ export interface FollowRecord {
 export interface FollowResult {
   followCount: number;
   followedUsers: string[];
-  reason: "exhausted" | "dry_streak" | "rate_limited";
+  reason: "exhausted" | "dry_streak" | "rate_limited" | "daily_cap";
+}
+
+// Pacing controls how aggressively the engine follows. Defaults (when
+// omitted) come from config and are the safe long-running values.
+export interface PacingOptions {
+  maxFollowsPerDay: number; // Infinity disables the daily cap (burst mode)
+  minDelaySec: number;
+  maxDelaySec: number;
 }
 
 export interface FollowEngineOptions {
@@ -36,6 +45,7 @@ export interface FollowEngineOptions {
   bioFilter?: (bio: string) => boolean;
   source: "followers" | "following";
   dryStreakThreshold?: number;
+  pacing?: PacingOptions;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -66,6 +76,14 @@ export function loadLog(): FollowRecord[] {
 
 export function saveLog(records: FollowRecord[]): void {
   fs.writeFileSync(LOG_FILE, JSON.stringify(records, null, 2));
+}
+
+// Count follows recorded so far on the current UTC calendar day. The daily
+// cap resets at UTC midnight. Derived from the log so it survives process
+// restarts (cron resumes) without a separate counter file.
+export function followsToday(records: FollowRecord[]): number {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  return records.filter((r) => r.timestamp.slice(0, 10) === today).length;
 }
 
 export async function dismissPopups(page: Page): Promise<void> {
@@ -146,6 +164,14 @@ async function login(): Promise<void> {
 // ── Follow Engine ─────────────────────────────────────────────
 export async function followFromPage(options: FollowEngineOptions): Promise<FollowResult> {
   const { page, target, pageUrl, bioFilter, source, dryStreakThreshold } = options;
+  const pacing: PacingOptions = options.pacing ?? {
+    maxFollowsPerDay: MAX_FOLLOWS_PER_DAY,
+    minDelaySec: MIN_DELAY_SEC,
+    maxDelaySec: MAX_DELAY_SEC,
+  };
+  const capLabel = Number.isFinite(pacing.maxFollowsPerDay)
+    ? String(pacing.maxFollowsPerDay)
+    : "∞ (burst)";
 
   // Navigate to target page
   console.log(`Navigating to ${pageUrl} ...`);
@@ -167,6 +193,15 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
   let followCount = 0;
   const followedUsers: string[] = [];
   let dryStreak = 0;
+
+  // Proactive daily cap: count what's already been followed today (across
+  // prior sessions/restarts) so we resume mid-budget instead of restarting it.
+  let dailyCount = followsToday(logRecords);
+  if (dailyCount >= pacing.maxFollowsPerDay) {
+    console.log(`\n  Daily follow cap already reached (${dailyCount}/${capLabel}). Stopping until UTC midnight.`);
+    return { followCount, followedUsers, reason: "daily_cap" };
+  }
+  console.log(`  Daily budget: ${dailyCount}/${capLabel} used today.`);
 
   // Wait for user cards to appear
   const initialCards = await page
@@ -292,10 +327,17 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
         saveLog(logRecords);
         followedSet.add(username);
         followedUsers.push(username);
+        dailyCount++;
 
-        console.log(`  ✓ Followed @${username} (${followCount} this session)`);
+        console.log(`  ✓ Followed @${username} (${followCount} this session, ${dailyCount}/${capLabel} today)`);
 
-        await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
+        // Stop once the daily budget is spent — before X rate-limits us.
+        if (dailyCount >= pacing.maxFollowsPerDay) {
+          console.log(`\n  Daily follow cap reached (${dailyCount}/${capLabel}). Stopping until UTC midnight.`);
+          return { followCount, followedUsers, reason: "daily_cap" };
+        }
+
+        await randomDelay(pacing.minDelaySec, pacing.maxDelaySec);
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
         consecutiveFailures++;
