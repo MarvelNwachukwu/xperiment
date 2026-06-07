@@ -19,6 +19,7 @@ import {
   REST_DELAY_MAX_SEC,
 } from "./config";
 import { matchesTechKeywords } from "./tech-filter";
+import { randInt, randomDelay } from "./pacing";
 
 // ── Types ──────────────────────────────────────────────────────
 export interface FollowRecord {
@@ -67,17 +68,6 @@ function waitForEnter(): Promise<void> {
       resolve();
     });
   });
-}
-
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randomDelay(minSec: number, maxSec: number, label = "before next follow"): Promise<void> {
-  const sec = randInt(minSec, maxSec);
-  const human = sec >= 90 ? `${(sec / 60).toFixed(1)}min` : `${sec}s`;
-  console.log(`  Waiting ${human} ${label}...`);
-  return new Promise((resolve) => setTimeout(resolve, sec * 1000));
 }
 
 export function loadLog(): FollowRecord[] {
