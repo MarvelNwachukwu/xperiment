@@ -227,6 +227,32 @@ async function enrich(): Promise<void> {
   console.log(`\nDone. ${profiles.length} profiles total in profiles.json.`);
 }
 
+const CANDIDATES_FILE = path.join(__dirname, "candidates.json");
+
+export interface Candidate extends Profile {
+  roleConfidence: "strong" | "review";
+  matchedKeywords: string[];
+}
+
+async function filter(): Promise<void> {
+  const profiles = loadProfiles();
+  const candidates: Candidate[] = [];
+  for (const p of profiles) {
+    const m = matchRole(p.bio);
+    if (m.confidence === null) continue;
+    candidates.push({ ...p, roleConfidence: m.confidence, matchedKeywords: m.matchedKeywords });
+  }
+  fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(candidates, null, 2));
+  const strong = candidates.filter((c) => c.roleConfidence === "strong").length;
+  console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates (${strong} strong, ${candidates.length - strong} review).`);
+}
+
+async function prepare(): Promise<void> {
+  await sync();
+  await enrich();
+  await filter();
+}
+
 if (require.main === module) {
   const command = process.argv[2];
   const run = (fn: () => Promise<void>) =>
@@ -236,6 +262,8 @@ if (require.main === module) {
     });
   if (command === "sync") run(sync);
   else if (command === "enrich") run(enrich);
+  else if (command === "filter") run(filter);
+  else if (command === "prepare") run(prepare);
   else {
     console.error("Usage: tsx prospect.ts <sync|enrich|filter|prepare>");
     process.exit(1);
