@@ -13,6 +13,7 @@ import {
   RATE_LIMIT_COOLDOWN_MIN,
   MAX_RATE_LIMIT_WAITS,
 } from "./config";
+import { matchesTechKeywords } from "./tech-filter";
 
 // ── Types ──────────────────────────────────────────────────────
 export interface FollowRecord {
@@ -92,33 +93,9 @@ export async function dismissPopups(page: Page): Promise<void> {
 }
 
 // ── Tech Filtering ────────────────────────────────────────────
-const TECH_KEYWORDS = [
-  // Roles
-  "developer", "dev", "engineer", "programmer", "coder", "hacker",
-  "founder", "cto", "ceo", "co-founder", "cofounder",
-  "designer", "ux", "ui",
-  // Domains
-  "software", "web3", "crypto", "blockchain", "bitcoin", "btc", "eth",
-  "ethereum", "defi", "nft", "ai", "ml", "machine learning",
-  "artificial intelligence", "data science", "data engineer",
-  "devops", "sre", "cloud", "aws", "gcp", "azure",
-  "cybersecurity", "infosec", "security",
-  "frontend", "backend", "fullstack", "full-stack", "full stack",
-  "mobile", "ios", "android", "flutter", "react native",
-  // Technologies
-  "javascript", "typescript", "python", "rust", "golang", "solidity",
-  "react", "nextjs", "next.js", "vue", "angular", "svelte",
-  "node", "nodejs", "deno", "bun",
-  "docker", "kubernetes", "k8s", "terraform",
-  "postgres", "mongodb", "redis", "graphql",
-  "open source", "oss", "github", "api",
-  // Startup / VC
-  "startup", "saas", "b2b", "yc", "ycombinator", "techstars",
-  "venture", "investor", "angel",
-  // Tech media / community
-  "tech", "hackathon", "buildinpublic", "building in public",
-  "indie hacker", "indiehacker", "shipfast",
-];
+// Keyword list and matcher live in ./tech-filter (shared with unfollow-bot).
+// Re-exported here so existing importers (chain-runner) keep working.
+export { matchesTechKeywords } from "./tech-filter";
 
 async function extractBio(cell: ElementHandle): Promise<string> {
   const bioEl = await cell.$('[data-testid="UserCell"] > div > div:last-child');
@@ -126,11 +103,6 @@ async function extractBio(cell: ElementHandle): Promise<string> {
     return (await bioEl.innerText().catch(() => "")).slice(0, 200);
   }
   return (await cell.innerText().catch(() => "")).slice(0, 200);
-}
-
-export function matchesTechKeywords(bio: string): boolean {
-  const lower = bio.toLowerCase();
-  return TECH_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 // ── Browser Launch ─────────────────────────────────────────────

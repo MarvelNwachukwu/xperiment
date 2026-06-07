@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import type { Page, BrowserContext } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
+import { matchedTechKeywords } from "./tech-filter";
 
 // ── Configuration ──────────────────────────────────────────────
 const MIN_DELAY_SEC = 15;
@@ -11,34 +12,9 @@ const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
 const CANDIDATES_FILE = path.join(__dirname, "unfollow-candidates.json");
 const UNFOLLOW_LOG_FILE = path.join(__dirname, "unfollow-log.json");
 
-// Keywords that indicate a tech-related account (case-insensitive)
-const TECH_KEYWORDS = [
-  // Roles
-  "developer", "dev", "engineer", "programmer", "coder", "hacker",
-  "founder", "cto", "ceo", "co-founder", "cofounder",
-  "designer", "ux", "ui",
-  // Domains
-  "software", "web3", "crypto", "blockchain", "bitcoin", "btc", "eth",
-  "ethereum", "defi", "nft", "ai", "ml", "machine learning",
-  "artificial intelligence", "data science", "data engineer",
-  "devops", "sre", "cloud", "aws", "gcp", "azure",
-  "cybersecurity", "infosec", "security",
-  "frontend", "backend", "fullstack", "full-stack", "full stack",
-  "mobile", "ios", "android", "flutter", "react native",
-  // Technologies
-  "javascript", "typescript", "python", "rust", "golang", "solidity",
-  "react", "nextjs", "next.js", "vue", "angular", "svelte",
-  "node", "nodejs", "deno", "bun",
-  "docker", "kubernetes", "k8s", "terraform",
-  "postgres", "mongodb", "redis", "graphql",
-  "open source", "oss", "github", "api",
-  // Startup / VC
-  "startup", "saas", "b2b", "yc", "ycombinator", "techstars",
-  "venture", "investor", "angel",
-  // Tech media / community
-  "tech", "hackathon", "buildinpublic", "building in public",
-  "indie hacker", "indiehacker", "shipfast",
-];
+// Keyword list and matcher live in ./tech-filter (shared with follow-bot)
+// so the two bots never drift — otherwise a freshly-followed crypto account
+// could be flagged "not tech" and unfollowed.
 
 // ── Types ──────────────────────────────────────────────────────
 interface ScanResult {
@@ -63,8 +39,7 @@ function randomDelay(minSec: number, maxSec: number): Promise<void> {
 }
 
 function isTechAccount(bio: string): { isTech: boolean; matchedKeywords: string[] } {
-  const lowerBio = bio.toLowerCase();
-  const matched = TECH_KEYWORDS.filter((kw) => lowerBio.includes(kw));
+  const matched = matchedTechKeywords(bio);
   return { isTech: matched.length > 0, matchedKeywords: matched };
 }
 
