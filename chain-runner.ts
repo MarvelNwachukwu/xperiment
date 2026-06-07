@@ -5,10 +5,18 @@ import {
   DRY_STREAK_THRESHOLD,
   HEARTBEAT_INTERVAL_MS,
   MAX_FOLLOWS_PER_DAY,
-  MIN_DELAY_SEC,
-  MAX_DELAY_SEC,
-  BURST_MIN_DELAY_SEC,
-  BURST_MAX_DELAY_SEC,
+  CLUSTER_MIN,
+  CLUSTER_MAX,
+  INTRA_DELAY_MIN_SEC,
+  INTRA_DELAY_MAX_SEC,
+  REST_DELAY_MIN_SEC,
+  REST_DELAY_MAX_SEC,
+  BURST_CLUSTER_MIN,
+  BURST_CLUSTER_MAX,
+  BURST_INTRA_DELAY_MIN_SEC,
+  BURST_INTRA_DELAY_MAX_SEC,
+  BURST_REST_DELAY_MIN_SEC,
+  BURST_REST_DELAY_MAX_SEC,
 } from "./config";
 import {
   launchBrowser,
@@ -194,12 +202,16 @@ async function runChain(state: ChainState, pacing: PacingOptions): Promise<void>
 
 // ── CLI ───────────────────────────────────────────────────────
 function parsePacing(args: string[]): PacingOptions {
-  // Burst: no daily cap + fast delays. Deliberate manual runs only.
+  // Burst: no daily cap + small fast clusters. Deliberate manual runs only.
   if (args.includes("--burst")) {
     return {
       maxFollowsPerDay: Infinity,
-      minDelaySec: BURST_MIN_DELAY_SEC,
-      maxDelaySec: BURST_MAX_DELAY_SEC,
+      clusterMin: BURST_CLUSTER_MIN,
+      clusterMax: BURST_CLUSTER_MAX,
+      intraDelayMinSec: BURST_INTRA_DELAY_MIN_SEC,
+      intraDelayMaxSec: BURST_INTRA_DELAY_MAX_SEC,
+      restDelayMinSec: BURST_REST_DELAY_MIN_SEC,
+      restDelayMaxSec: BURST_REST_DELAY_MAX_SEC,
     };
   }
   // Safe long-running default, with an optional daily-cap override.
@@ -213,7 +225,15 @@ function parsePacing(args: string[]): PacingOptions {
     }
     maxFollowsPerDay = n;
   }
-  return { maxFollowsPerDay, minDelaySec: MIN_DELAY_SEC, maxDelaySec: MAX_DELAY_SEC };
+  return {
+    maxFollowsPerDay,
+    clusterMin: CLUSTER_MIN,
+    clusterMax: CLUSTER_MAX,
+    intraDelayMinSec: INTRA_DELAY_MIN_SEC,
+    intraDelayMaxSec: INTRA_DELAY_MAX_SEC,
+    restDelayMinSec: REST_DELAY_MIN_SEC,
+    restDelayMaxSec: REST_DELAY_MAX_SEC,
+  };
 }
 
 async function main(): Promise<void> {
@@ -221,10 +241,14 @@ async function main(): Promise<void> {
   const resume = args.includes("--resume");
   const pacing = parsePacing(args);
 
+  const burstDesc =
+    `bursts of ${pacing.clusterMin}-${pacing.clusterMax}, ` +
+    `${pacing.intraDelayMinSec}-${pacing.intraDelayMaxSec}s within / ` +
+    `${pacing.restDelayMinSec / 60}-${pacing.restDelayMaxSec / 60}min rest`;
   if (pacing.maxFollowsPerDay === Infinity) {
-    chainLog("⚠ Burst mode: daily cap OFF, fast delays. Higher ban risk — manual runs only.");
+    chainLog(`⚠ Burst mode: daily cap OFF, ${burstDesc}. Higher ban risk — manual runs only.`);
   } else {
-    chainLog(`Pacing: ${pacing.maxFollowsPerDay}/day, ${pacing.minDelaySec}-${pacing.maxDelaySec}s between follows.`);
+    chainLog(`Pacing: ${pacing.maxFollowsPerDay}/day, ${burstDesc}.`);
   }
 
   let state: ChainState;

@@ -5,14 +5,18 @@ import * as readline from "readline";
 import {
   LOG_FILE,
   PROFILE_DIR,
-  MIN_DELAY_SEC,
-  MAX_DELAY_SEC,
   FOLLOW_TIMEOUT_MS,
   SCROLL_WAIT_MS,
   RATE_LIMIT_THRESHOLD,
   RATE_LIMIT_COOLDOWN_MIN,
   MAX_RATE_LIMIT_WAITS,
   MAX_FOLLOWS_PER_DAY,
+  CLUSTER_MIN,
+  CLUSTER_MAX,
+  INTRA_DELAY_MIN_SEC,
+  INTRA_DELAY_MAX_SEC,
+  REST_DELAY_MIN_SEC,
+  REST_DELAY_MAX_SEC,
 } from "./config";
 import { matchesTechKeywords } from "./tech-filter";
 
@@ -30,12 +34,18 @@ export interface FollowResult {
   reason: "exhausted" | "dry_streak" | "rate_limited" | "daily_cap";
 }
 
-// Pacing controls how aggressively the engine follows. Defaults (when
-// omitted) come from config and are the safe long-running values.
+// Pacing controls how aggressively the engine follows. The engine follows in
+// bursts: a cluster of clusterMin..clusterMax follows spaced intraDelay apart,
+// then a longer restDelay before the next cluster. Defaults (when omitted)
+// come from config and are the safe long-running values.
 export interface PacingOptions {
   maxFollowsPerDay: number; // Infinity disables the daily cap (burst mode)
-  minDelaySec: number;
-  maxDelaySec: number;
+  clusterMin: number; // min follows per burst
+  clusterMax: number; // max follows per burst
+  intraDelayMinSec: number; // delay between follows within a burst
+  intraDelayMaxSec: number;
+  restDelayMinSec: number; // rest between bursts
+  restDelayMaxSec: number;
 }
 
 export interface FollowEngineOptions {
@@ -59,10 +69,15 @@ function waitForEnter(): Promise<void> {
   });
 }
 
-function randomDelay(minSec: number, maxSec: number): Promise<void> {
-  const ms = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000;
-  console.log(`  Waiting ${ms / 1000}s before next follow...`);
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function randInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomDelay(minSec: number, maxSec: number, label = "before next follow"): Promise<void> {
+  const sec = randInt(minSec, maxSec);
+  const human = sec >= 90 ? `${(sec / 60).toFixed(1)}min` : `${sec}s`;
+  console.log(`  Waiting ${human} ${label}...`);
+  return new Promise((resolve) => setTimeout(resolve, sec * 1000));
 }
 
 export function loadLog(): FollowRecord[] {
@@ -166,8 +181,12 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
   const { page, target, pageUrl, bioFilter, source, dryStreakThreshold } = options;
   const pacing: PacingOptions = options.pacing ?? {
     maxFollowsPerDay: MAX_FOLLOWS_PER_DAY,
-    minDelaySec: MIN_DELAY_SEC,
-    maxDelaySec: MAX_DELAY_SEC,
+    clusterMin: CLUSTER_MIN,
+    clusterMax: CLUSTER_MAX,
+    intraDelayMinSec: INTRA_DELAY_MIN_SEC,
+    intraDelayMaxSec: INTRA_DELAY_MAX_SEC,
+    restDelayMinSec: REST_DELAY_MIN_SEC,
+    restDelayMaxSec: REST_DELAY_MAX_SEC,
   };
   const capLabel = Number.isFinite(pacing.maxFollowsPerDay)
     ? String(pacing.maxFollowsPerDay)
@@ -214,6 +233,10 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
   const processedUsernames = new Set<string>();
   let consecutiveFailures = 0;
   let rateLimitWaits = 0;
+
+  // Burst scheduler: follow `clusterRemaining` accounts close together, then
+  // rest. Reset to a new random cluster size each time a burst completes.
+  let clusterRemaining = randInt(pacing.clusterMin, pacing.clusterMax);
 
   while (true) {
     const cells = await page.$$('[data-testid="cellInnerDiv"]');
@@ -337,7 +360,15 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
           return { followCount, followedUsers, reason: "daily_cap" };
         }
 
-        await randomDelay(pacing.minDelaySec, pacing.maxDelaySec);
+        // Burst pacing: short delay within a cluster, longer rest after it.
+        clusterRemaining--;
+        if (clusterRemaining > 0) {
+          await randomDelay(pacing.intraDelayMinSec, pacing.intraDelayMaxSec, `(${clusterRemaining} more in this burst)`);
+        } else {
+          await randomDelay(pacing.restDelayMinSec, pacing.restDelayMaxSec, "to rest between bursts");
+          clusterRemaining = randInt(pacing.clusterMin, pacing.clusterMax);
+          console.log(`  Starting a new burst of ${clusterRemaining} follow(s).`);
+        }
       } catch (err) {
         console.warn(`  ⚠ Failed to follow @${username}: ${err}`);
         consecutiveFailures++;

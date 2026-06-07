@@ -47,7 +47,7 @@ Pick a target account whose followers you want to follow. Say you want to follow
 npm run follow -- @somedev
 ```
 
-The script opens Chrome, goes to that account's followers page, and starts clicking Follow on each person. It waits 15-45 seconds between each one (random) to avoid getting rate-limited. It stops when it runs out of followers to process.
+The script opens Chrome, goes to that account's followers page, and starts clicking Follow on each person. It follows in human-like bursts — a few accounts a few seconds apart, then a several-minute rest — to avoid getting rate-limited, and stops for the day once it hits the daily cap (or runs out of followers). See [Chain Mode](#chain-mode-long-running) for the pacing details.
 
 A few things it handles:
 
@@ -160,12 +160,19 @@ npm run chain -- --resume
 3. Continues chaining through the social graph indefinitely
 4. Persists state to `chain-state.json` — survives crashes and restarts
 
-By default it self-paces: it stops once it has followed `MAX_FOLLOWS_PER_DAY`
+By default it self-paces with a human-like **burst pattern**: it follows a
+small cluster of accounts close together (2–5, a few seconds apart), then rests
+3–8 minutes before the next burst — like a person scrolling and following a few
+accounts, then stepping away. This is far less bot-like than a fixed metronome,
+and the rests let X's rate-limit window reset between bursts.
+
+It also self-limits: it stops once it has followed `MAX_FOLLOWS_PER_DAY`
 accounts in the current UTC day (counted from the follow log, so it survives
-restarts) and exits. The cron watchdog's retries are near-free until the cap
-resets at UTC midnight. This keeps you under X's ~400/day soft limit. `--resume`
-always uses safe pacing regardless of how the chain was first launched, so
-unattended cron runs never burst.
+restarts) and exits. At ~33 follows/hour, a full 350/day budget drains in
+~10 hours, then the bot idles until the cap resets at UTC midnight — the cron
+watchdog's retries are near-free in the meantime. This keeps you under X's
+~400/day soft limit. `--resume` always uses safe pacing regardless of how the
+chain was first launched, so unattended cron runs never burst-mode.
 
 ### Cron Watchdog
 
@@ -192,10 +199,11 @@ All constants are centralized in `config.ts`:
 |---|---|---|
 | `DRY_STREAK_THRESHOLD` | 20 | Non-tech skips before chaining to next target |
 | `HEARTBEAT_INTERVAL_MS` | 120000 | How often heartbeat is written (2 min) |
-| `MIN_DELAY_SEC` | 90 | Min seconds between follows (safe mode) |
-| `MAX_DELAY_SEC` | 300 | Max seconds between follows (safe mode) |
-| `MAX_FOLLOWS_PER_DAY` | 300 | Daily follow cap (per UTC day); `--burst` disables it |
-| `BURST_MIN_DELAY_SEC` / `BURST_MAX_DELAY_SEC` | 15 / 45 | Delay range used by `--burst` |
+| `MAX_FOLLOWS_PER_DAY` | 350 | Daily follow cap (per UTC day); `--burst` disables it |
+| `CLUSTER_MIN` / `CLUSTER_MAX` | 2 / 5 | Follows per burst (safe mode) |
+| `INTRA_DELAY_MIN_SEC` / `INTRA_DELAY_MAX_SEC` | 5 / 20 | Seconds between follows within a burst |
+| `REST_DELAY_MIN_SEC` / `REST_DELAY_MAX_SEC` | 180 / 480 | Rest between bursts (3–8 min) |
+| `BURST_*` | 3–5 / 3–10s / 30–90s | Cluster, intra, and rest ranges for `--burst` |
 | `RATE_LIMIT_THRESHOLD` | 3 | Consecutive failures before rate-limit cooldown |
 | `RATE_LIMIT_COOLDOWN_MIN` | 15 | Minutes to wait when rate-limited |
 | `MAX_RATE_LIMIT_WAITS` | 5 | Max cooldowns before exiting (cron restarts) |
@@ -224,8 +232,10 @@ If you crank the delays too low or follow too many people in one sitting, you'll
 
 Most constants are centralized in `config.ts`. To change them, open that file and edit the values:
 
-- `MIN_DELAY_SEC` / `MAX_DELAY_SEC` -- delay range between follows/unfollows (default: 90-300 seconds; `--burst` uses 15-45)
-- `MAX_FOLLOWS_PER_DAY` -- daily follow cap per UTC day (default: 300; `--burst` disables it)
+- `CLUSTER_MIN` / `CLUSTER_MAX` -- follows per burst (default: 2-5; `--burst` uses 3-5)
+- `INTRA_DELAY_MIN_SEC` / `INTRA_DELAY_MAX_SEC` -- delay between follows within a burst (default: 5-20s)
+- `REST_DELAY_MIN_SEC` / `REST_DELAY_MAX_SEC` -- rest between bursts (default: 180-480s)
+- `MAX_FOLLOWS_PER_DAY` -- daily follow cap per UTC day (default: 350; `--burst` disables it)
 - `RATE_LIMIT_THRESHOLD` -- how many consecutive failures before assuming rate limit (default: 3)
 - `RATE_LIMIT_COOLDOWN_MIN` -- how long to wait when rate-limited, in minutes (default: 15)
 - `MAX_RATE_LIMIT_WAITS` -- how many cooldowns before giving up for the session (default: 5)
