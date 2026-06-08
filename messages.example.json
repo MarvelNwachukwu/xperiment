@@ -1,0 +1,14 @@
+{
+  "happytokenizing": {
+    "tone": "warm",
+    "text": "Hey — really enjoyed your recent thread on tokenizing real-world assets; the point about settlement latency hit home. I'm a full-stack/Solana dev (shipped a couple of on-chain payment flows) and what you're building at the protocol is exactly the problem space I want to be in. Are you hiring engineers right now, or open to a quick chat?"
+  },
+  "@janefounder": {
+    "tone": "cold",
+    "text": "Hi Jane — I've been following your team's work on payments infra for a while. I'm a backend engineer with ~5 years in fintech (Rust/Go, high-throughput systems) looking for my next role, and your stack looks like a strong fit. Would you be open to a 15-minute call to hear what you're working on?"
+  },
+  "ScofieldOnchain": {
+    "tone": "warm",
+    "text": "Saw you're scaling the eng team — congrats on the recent raise. I'm a senior frontend dev (React/TypeScript, design-systems heavy) and your product's UI is exactly the kind of work I love. Happy to send a portfolio if you're taking intros."
+  }
+}
