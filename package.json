@@ -12,7 +12,8 @@
     "prospect:sync": "tsx prospect.ts sync",
     "prospect:enrich": "tsx prospect.ts enrich",
     "prospect:filter": "tsx prospect.ts filter",
-    "prospect:prepare": "tsx prospect.ts prepare"
+    "prospect:prepare": "tsx prospect.ts prepare",
+    "dm": "tsx dm-bot.ts send"
   },
   "devDependencies": {
     "playwright": "^1.51.0",
