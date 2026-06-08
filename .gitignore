@@ -1,6 +1,7 @@
 node_modules/
 cookies.json
 .chrome-profile/
+.DS_Store
 
 # All generated state/logs live under output/
 output/
