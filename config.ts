@@ -50,12 +50,16 @@ export const DRY_STREAK_THRESHOLD = 20;
 export const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
 // ── Profile Enrichment ────────────────────────────────────────
-// Visiting profiles + reading tweets is heavy; pace it like following.
-export const ENRICH_MAX_PER_DAY = 300;
-export const ENRICH_CLUSTER_MIN = 2;
-export const ENRICH_CLUSTER_MAX = 4;
-export const ENRICH_INTRA_DELAY_MIN_SEC = 8;
-export const ENRICH_INTRA_DELAY_MAX_SEC = 25;
-export const ENRICH_REST_DELAY_MIN_SEC = 120;
-export const ENRICH_REST_DELAY_MAX_SEC = 360;
+// Enrichment is READ-ONLY (visit profile, read DOM) — no follows/writes, so it
+// is NOT exposed to follow limits or spam-follow detection. Pacing here only
+// needs to (a) stay under X's read budget via the daily cap, and (b) avoid
+// hammering page navigations fast enough to trip an anti-automation soft-lock.
+// Hence brisk seconds-scale pacing, not the minutes-scale rests of following.
+export const ENRICH_MAX_PER_DAY = 800;
+export const ENRICH_CLUSTER_MIN = 8;
+export const ENRICH_CLUSTER_MAX = 15;
+export const ENRICH_INTRA_DELAY_MIN_SEC = 2;
+export const ENRICH_INTRA_DELAY_MAX_SEC = 6;
+export const ENRICH_REST_DELAY_MIN_SEC = 20;
+export const ENRICH_REST_DELAY_MAX_SEC = 45;
 export const RECENT_TWEETS_COUNT = 5;
