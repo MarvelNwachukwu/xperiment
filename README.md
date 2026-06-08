@@ -105,7 +105,7 @@ npm run scan
 
 This scrolls through everyone you follow and reads their bio. If the bio contains any tech-related keywords (developer, engineer, crypto, web3, AI, startup, python, react, etc. -- there are about 70 of them), it marks that account as "keep." Everything else gets marked as an unfollow candidate.
 
-When it finishes, it writes `unfollow-candidates.json`. Each entry looks like this:
+When it finishes, it writes `output/unfollow-candidates.json`. Each entry looks like this:
 
 ```json
 {
@@ -122,7 +122,7 @@ The terminal also prints a live summary as it goes, so you can watch the classif
 
 ### Step 2: Review
 
-Open `unfollow-candidates.json` in any text editor. Look through it. If there's someone marked for unfollow that you actually want to keep, change their `"markedForUnfollow"` from `true` to `false`. The scan isn't perfect -- someone might have a non-techy bio but still be someone you want to follow. This review step is your safety net.
+Open `output/unfollow-candidates.json` in any text editor. Look through it. If there's someone marked for unfollow that you actually want to keep, change their `"markedForUnfollow"` from `true` to `false`. The scan isn't perfect -- someone might have a non-techy bio but still be someone you want to follow. This review step is your safety net.
 
 ### Step 3: Unfollow
 
@@ -215,12 +215,12 @@ All constants are centralized in `config.ts`:
 ### Pipeline
 
 ```
-npm run prospect:sync    → following.json        (who you follow right now)
-npm run prospect:enrich  → profiles.json         (deep data per account)
-npm run prospect:filter  → candidates.json       (decision-maker shortlist)
+npm run prospect:sync    → output/following.json   (who you follow right now)
+npm run prospect:enrich  → output/profiles.json    (deep data per account)
+npm run prospect:filter  → output/candidates.json  (decision-maker shortlist)
                            [writer AI]
-                        → messages.json          (DM drafts, external step)
-                           [future dm-bot.ts]    (sends the messages)
+                        → output/messages.json     (DM drafts, external step)
+                           [future dm-bot.ts]       (sends the messages)
 ```
 
 `prepare` chains all three steps in order: sync → enrich → filter.
@@ -260,7 +260,7 @@ Filtering is two-stage. Accounts with strong title signals (founder, CTO, CEO, h
 
 ### Generated files
 
-`following.json`, `profiles.json`, `candidates.json`, and `messages.json` are all gitignored.
+All these files live under `output/`, which is gitignored.
 
 ## The keyword list
 
@@ -300,14 +300,19 @@ Most constants are centralized in `config.ts`. To change them, open that file an
 
 ## Files the scripts create
 
-These are all gitignored:
+All generated state and logs live under `output/` (gitignored). The only generated thing outside it is the Chrome profile, which stays at the repo root because moving it would force a re-login.
 
-- `.chrome-profile/` -- the persistent Chrome profile with your login session
-- `follow-log.json` -- record of every account you've followed
-- `unfollow-candidates.json` -- the scan results (your review list)
-- `unfollow-log.json` -- record of every account you've unfollowed
-- `chain-state.json` -- chain mode state (current target, followed list, heartbeat)
-- `chain-log.txt` -- append-only log of chain mode activity
+- `.chrome-profile/` -- the persistent Chrome profile with your login session (repo root)
+- `output/follow-log.json` -- record of every account you've followed
+- `output/following.json` -- canonical set of who you follow (synced)
+- `output/profiles.json` -- deep enriched profiles
+- `output/candidates.json` -- decision-maker shortlist
+- `output/messages.json` -- DM drafts (produced by the writer AI)
+- `output/dm-log.json` -- record of DM sends
+- `output/unfollow-candidates.json` -- the scan results (your review list)
+- `output/unfollow-log.json` -- record of every account you've unfollowed
+- `output/chain-state.json` -- chain mode state (current target, followed list, heartbeat)
+- `output/chain-log.txt` -- append-only log of chain mode activity
 
 ## If something goes wrong
 

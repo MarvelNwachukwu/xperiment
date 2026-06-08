@@ -1,10 +1,25 @@
+import * as fs from "fs";
 import * as path from "path";
 
 // ── Paths ─────────────────────────────────────────────────────
-export const LOG_FILE = path.join(__dirname, "follow-log.json");
+// All generated state/logs live under output/ to keep the repo root clean.
+// Created on import so any tool can write without a separate setup step.
+export const OUTPUT_DIR = path.join(__dirname, "output");
+fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+export const LOG_FILE = path.join(OUTPUT_DIR, "follow-log.json");
+export const CHAIN_STATE_FILE = path.join(OUTPUT_DIR, "chain-state.json");
+export const CHAIN_LOG_FILE = path.join(OUTPUT_DIR, "chain-log.txt");
+export const FOLLOWING_FILE = path.join(OUTPUT_DIR, "following.json");
+export const PROFILES_FILE = path.join(OUTPUT_DIR, "profiles.json");
+export const CANDIDATES_FILE = path.join(OUTPUT_DIR, "candidates.json");
+export const MESSAGES_FILE = path.join(OUTPUT_DIR, "messages.json");
+export const DM_LOG_FILE = path.join(OUTPUT_DIR, "dm-log.json");
+export const UNFOLLOW_CANDIDATES_FILE = path.join(OUTPUT_DIR, "unfollow-candidates.json");
+export const UNFOLLOW_LOG_FILE = path.join(OUTPUT_DIR, "unfollow-log.json");
+
+// Browser session cache stays at repo root — moving it forces a re-login.
 export const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
-export const CHAIN_STATE_FILE = path.join(__dirname, "chain-state.json");
-export const CHAIN_LOG_FILE = path.join(__dirname, "chain-log.txt");
 
 // ── Follow Engine ─────────────────────────────────────────────
 export const FOLLOW_TIMEOUT_MS = 5000;

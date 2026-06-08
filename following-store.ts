@@ -1,7 +1,5 @@
 import * as fs from "fs";
-import * as path from "path";
-
-const FOLLOWING_FILE = path.join(__dirname, "following.json");
+import { FOLLOWING_FILE } from "./config";
 
 export interface FollowingRecord {
   handle: string;

@@ -1,5 +1,4 @@
 import * as fs from "fs";
-import * as path from "path";
 import type { Page } from "playwright";
 import { launchBrowser } from "./follow-bot";
 import { loadLog } from "./follow-bot";
@@ -22,6 +21,8 @@ import {
   ENRICH_REST_DELAY_MIN_SEC,
   ENRICH_REST_DELAY_MAX_SEC,
   RECENT_TWEETS_COUNT,
+  PROFILES_FILE,
+  CANDIDATES_FILE,
 } from "./config";
 
 // Scrape every UserCell currently on the page into ScrapedFollowing rows.
@@ -91,8 +92,6 @@ async function sync(): Promise<void> {
     await context.close();
   }
 }
-
-const PROFILES_FILE = path.join(__dirname, "profiles.json");
 
 export interface Profile {
   handle: string;
@@ -230,8 +229,6 @@ async function enrich(): Promise<void> {
   }
   console.log(`\nDone. ${profiles.length} profiles total in profiles.json.`);
 }
-
-const CANDIDATES_FILE = path.join(__dirname, "candidates.json");
 
 export interface Candidate extends Profile {
   // Narrows roleConfidence: candidates always matched (never null).

@@ -1,12 +1,6 @@
 node_modules/
 cookies.json
-follow-log.json
-unfollow-candidates.json
-unfollow-log.json
 .chrome-profile/
-chain-state.json
-chain-log.txt
-following.json
-profiles.json
-candidates.json
-messages.json
+
+# All generated state/logs live under output/
+output/
