@@ -45,3 +45,9 @@ export function matchRole(bio: string): RoleMatch {
 
   return { confidence: null, matchedKeywords: [] };
 }
+
+// Human-readable role summary, e.g. "founder/ceo (strong)" or "-" when no match.
+export function roleLabel(confidence: RoleConfidence | null, keywords: string[]): string {
+  if (keywords.length === 0) return "-";
+  return `${keywords.join("/")} (${confidence})`;
+}

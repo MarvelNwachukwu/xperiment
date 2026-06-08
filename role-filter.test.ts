@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchRole } from "./role-filter";
+import { matchRole, roleLabel } from "./role-filter";
 
 test("strong title -> strong confidence", () => {
   const r = matchRole("Co-founder & CEO at Acme. Building the future.");
@@ -25,4 +25,10 @@ test("no signal -> null", () => {
 test("word boundary: 'lead' does not match inside 'leadership' only as a word", () => {
   // "leaderboard" should NOT trigger the bare 'lead' review keyword
   assert.equal(matchRole("I love the leaderboard rankings.").confidence, null);
+});
+
+test("roleLabel renders matched titles with confidence, or '-' when empty", () => {
+  assert.equal(roleLabel("strong", ["founder", "ceo"]), "founder/ceo (strong)");
+  assert.equal(roleLabel("review", ["lead"]), "lead (review)");
+  assert.equal(roleLabel(null, []), "-");
 });

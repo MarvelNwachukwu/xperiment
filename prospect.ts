@@ -10,7 +10,7 @@ import {
   mergeFollowing,
   type ScrapedFollowing,
 } from "./following-store";
-import { matchRole } from "./role-filter";
+import { matchRole, roleLabel } from "./role-filter";
 import { parseCount, parseCompany } from "./profile-parse";
 import {
   SCROLL_WAIT_MS,
@@ -104,7 +104,8 @@ export interface Profile {
   website: string | null;
   joined: string | null;
   verified: boolean;
-  role: string | null;
+  roleConfidence: "strong" | "review" | null;
+  matchedKeywords: string[];
   company: string | null;
   pinnedTweet: string | null;
   recentTweets: string[];
@@ -152,6 +153,8 @@ async function scrapeProfile(page: Page, handle: string): Promise<Profile> {
     ? !!(await articles[0].$('[data-testid="socialContext"]'))
     : false;
 
+  const role = matchRole(bio);
+
   return {
     handle,
     name,
@@ -162,7 +165,8 @@ async function scrapeProfile(page: Page, handle: string): Promise<Profile> {
     website,
     joined,
     verified,
-    role: matchRole(bio).confidence,
+    roleConfidence: role.confidence,
+    matchedKeywords: role.matchedKeywords,
     company: parseCompany(bio),
     pinnedTweet: isPinned ? tweetTexts[0] ?? null : null,
     recentTweets: tweetTexts.slice(isPinned ? 1 : 0, RECENT_TWEETS_COUNT + (isPinned ? 1 : 0)),
@@ -210,7 +214,7 @@ async function enrich(): Promise<void> {
         profiles.push(profile);
         saveProfiles(profiles);
         dailyCount++;
-        console.log(`  ✓ @${handle} (role=${profile.role ?? "-"}, followers=${profile.followers ?? "?"}) [${dailyCount}/${ENRICH_MAX_PER_DAY}]`);
+        console.log(`  ✓ @${handle} (role=${roleLabel(profile.roleConfidence, profile.matchedKeywords)}, followers=${profile.followers ?? "?"}) [${dailyCount}/${ENRICH_MAX_PER_DAY}]`);
       } catch (err) {
         console.warn(`  ⚠ Failed to enrich @${handle}: ${err}`);
         continue;
@@ -230,8 +234,9 @@ async function enrich(): Promise<void> {
 const CANDIDATES_FILE = path.join(__dirname, "candidates.json");
 
 export interface Candidate extends Profile {
+  // Narrows roleConfidence: candidates always matched (never null).
+  // matchedKeywords is inherited from Profile.
   roleConfidence: "strong" | "review";
-  matchedKeywords: string[];
 }
 
 async function filter(): Promise<void> {
