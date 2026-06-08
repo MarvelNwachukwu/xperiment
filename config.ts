@@ -78,3 +78,15 @@ export const ENRICH_INTRA_DELAY_MAX_SEC = 6;
 export const ENRICH_REST_DELAY_MIN_SEC = 20;
 export const ENRICH_REST_DELAY_MAX_SEC = 45;
 export const RECENT_TWEETS_COUNT = 5;
+
+// ── DM Sender (dm-bot) ────────────────────────────────────────
+// DMs are far more sensitive than follows — unsolicited DMs get flagged fast.
+// Hence a very low daily cap and slow, small-cluster pacing.
+export const DM_MAX_PER_DAY = 30;
+export const DM_MAX_LENGTH = 10000; // X DM character limit
+export const DM_CLUSTER_MIN = 1;
+export const DM_CLUSTER_MAX = 2;
+export const DM_INTRA_DELAY_MIN_SEC = 20;
+export const DM_INTRA_DELAY_MAX_SEC = 60;
+export const DM_REST_DELAY_MIN_SEC = 180;
+export const DM_REST_DELAY_MAX_SEC = 600;
