@@ -1,16 +1,17 @@
 import { chromium } from "playwright";
 import type { Page, BrowserContext } from "playwright";
 import * as fs from "fs";
-import * as path from "path";
 import { matchedTechKeywords } from "./tech-filter";
+import {
+  PROFILE_DIR,
+  UNFOLLOW_CANDIDATES_FILE as CANDIDATES_FILE,
+  UNFOLLOW_LOG_FILE,
+} from "./config";
 
 // ── Configuration ──────────────────────────────────────────────
 const MIN_DELAY_SEC = 15;
 const MAX_DELAY_SEC = 45;
 const SCROLL_WAIT_MS = 5000;
-const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
-const CANDIDATES_FILE = path.join(__dirname, "unfollow-candidates.json");
-const UNFOLLOW_LOG_FILE = path.join(__dirname, "unfollow-log.json");
 
 // Keyword list and matcher live in ./tech-filter (shared with follow-bot)
 // so the two bots never drift — otherwise a freshly-followed crypto account

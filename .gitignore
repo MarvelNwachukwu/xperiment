@@ -1,8 +1,7 @@
 node_modules/
 cookies.json
-follow-log.json
-unfollow-candidates.json
-unfollow-log.json
 .chrome-profile/
-chain-state.json
-chain-log.txt
+.DS_Store
+
+# All generated state/logs live under output/
+output/

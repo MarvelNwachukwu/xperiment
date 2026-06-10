@@ -1,10 +1,25 @@
+import * as fs from "fs";
 import * as path from "path";
 
 // ── Paths ─────────────────────────────────────────────────────
-export const LOG_FILE = path.join(__dirname, "follow-log.json");
+// All generated state/logs live under output/ to keep the repo root clean.
+// Created on import so any tool can write without a separate setup step.
+export const OUTPUT_DIR = path.join(__dirname, "output");
+fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+export const LOG_FILE = path.join(OUTPUT_DIR, "follow-log.json");
+export const CHAIN_STATE_FILE = path.join(OUTPUT_DIR, "chain-state.json");
+export const CHAIN_LOG_FILE = path.join(OUTPUT_DIR, "chain-log.txt");
+export const FOLLOWING_FILE = path.join(OUTPUT_DIR, "following.json");
+export const PROFILES_FILE = path.join(OUTPUT_DIR, "profiles.json");
+export const CANDIDATES_FILE = path.join(OUTPUT_DIR, "candidates.json");
+export const MESSAGES_FILE = path.join(OUTPUT_DIR, "messages.json");
+export const DM_LOG_FILE = path.join(OUTPUT_DIR, "dm-log.json");
+export const UNFOLLOW_CANDIDATES_FILE = path.join(OUTPUT_DIR, "unfollow-candidates.json");
+export const UNFOLLOW_LOG_FILE = path.join(OUTPUT_DIR, "unfollow-log.json");
+
+// Browser session cache stays at repo root — moving it forces a re-login.
 export const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
-export const CHAIN_STATE_FILE = path.join(__dirname, "chain-state.json");
-export const CHAIN_LOG_FILE = path.join(__dirname, "chain-log.txt");
 
 // ── Follow Engine ─────────────────────────────────────────────
 export const FOLLOW_TIMEOUT_MS = 5000;
@@ -48,3 +63,30 @@ export const MAX_RATE_LIMIT_WAITS = 5;
 // ── Chain Runner ──────────────────────────────────────────────
 export const DRY_STREAK_THRESHOLD = 20;
 export const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+
+// ── Profile Enrichment ────────────────────────────────────────
+// Enrichment is READ-ONLY (visit profile, read DOM) — no follows/writes, so it
+// is NOT exposed to follow limits or spam-follow detection. Pacing here only
+// needs to (a) stay under X's read budget via the daily cap, and (b) avoid
+// hammering page navigations fast enough to trip an anti-automation soft-lock.
+// Hence brisk seconds-scale pacing, not the minutes-scale rests of following.
+export const ENRICH_MAX_PER_DAY = 800;
+export const ENRICH_CLUSTER_MIN = 8;
+export const ENRICH_CLUSTER_MAX = 15;
+export const ENRICH_INTRA_DELAY_MIN_SEC = 2;
+export const ENRICH_INTRA_DELAY_MAX_SEC = 6;
+export const ENRICH_REST_DELAY_MIN_SEC = 20;
+export const ENRICH_REST_DELAY_MAX_SEC = 45;
+export const RECENT_TWEETS_COUNT = 5;
+
+// ── DM Sender (dm-bot) ────────────────────────────────────────
+// DMs are far more sensitive than follows — unsolicited DMs get flagged fast.
+// Hence a very low daily cap and slow, small-cluster pacing.
+export const DM_MAX_PER_DAY = 30;
+export const DM_MAX_LENGTH = 10000; // X DM character limit
+export const DM_CLUSTER_MIN = 1;
+export const DM_CLUSTER_MAX = 2;
+export const DM_INTRA_DELAY_MIN_SEC = 20;
+export const DM_INTRA_DELAY_MAX_SEC = 60;
+export const DM_REST_DELAY_MIN_SEC = 180;
+export const DM_REST_DELAY_MAX_SEC = 600;
