@@ -1,9 +1,8 @@
-import { chromium } from "playwright";
-import type { Page, BrowserContext } from "playwright";
+import type { Page } from "playwright";
 import * as fs from "fs";
 import { matchedTechKeywords } from "./tech-filter";
+import { acquireBrowser } from "./browser";
 import {
-  PROFILE_DIR,
   UNFOLLOW_CANDIDATES_FILE as CANDIDATES_FILE,
   UNFOLLOW_LOG_FILE,
 } from "./config";
@@ -53,28 +52,11 @@ function loadUnfollowLog(): UnfollowRecord[] {
   }
 }
 
-async function launchBrowser(): Promise<BrowserContext> {
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,
-    channel: "chrome",
-    viewport: { width: 1280, height: 800 },
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--no-first-run",
-      "--no-default-browser-check",
-    ],
-  });
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-  return context;
-}
-
 // ── Scan Command ───────────────────────────────────────────────
 // Scrolls through your Following list, reads each bio, classifies
 // as tech/non-tech, and writes candidates to unfollow-candidates.json
 async function scan(): Promise<void> {
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
 
   // Navigate to your own following page
@@ -85,7 +67,7 @@ async function scan(): Promise<void> {
 
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
     console.error("Not logged in. Run `npm run login` first.");
-    await context.close();
+    await release();
     process.exit(1);
   }
 
@@ -93,7 +75,7 @@ async function scan(): Promise<void> {
   const profileLink = await page.$('a[data-testid="AppTabBar_Profile_Link"]');
   if (!profileLink) {
     console.error("Could not find profile link. Try running `npm run login` first.");
-    await context.close();
+    await release();
     process.exit(1);
   }
   const profileHref = await profileLink.getAttribute("href");
@@ -108,7 +90,7 @@ async function scan(): Promise<void> {
   const initialCards = await page.waitForSelector('[data-testid="cellInnerDiv"]', { timeout: 10000 }).catch(() => null);
   if (!initialCards) {
     console.error("No accounts found on your following page.");
-    await context.close();
+    await release();
     process.exit(1);
   }
 
@@ -219,7 +201,7 @@ async function scan(): Promise<void> {
   console.log(`\nReview the file and set "markedForUnfollow": false for anyone you want to KEEP.`);
   console.log(`Then run: npm run unfollow`);
 
-  await context.close();
+  await release();
 }
 
 // ── Unfollow Command ───────────────────────────────────────────
@@ -240,7 +222,7 @@ async function unfollow(): Promise<void> {
 
   console.log(`Found ${toUnfollow.length} accounts to unfollow.\n`);
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
 
   // Verify we're logged in
@@ -249,7 +231,7 @@ async function unfollow(): Promise<void> {
 
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
     console.error("Not logged in. Run `npm run login` first.");
-    await context.close();
+    await release();
     process.exit(1);
   }
 
@@ -318,7 +300,7 @@ async function unfollow(): Promise<void> {
   }
 
   console.log(`\nSession complete. Unfollowed ${unfollowCount} accounts.`);
-  await context.close();
+  await release();
 }
 
 // ── Main ───────────────────────────────────────────────────────

@@ -19,13 +19,13 @@ import {
   BURST_REST_DELAY_MAX_SEC,
 } from "./config";
 import {
-  launchBrowser,
   followFromPage,
   loadLog,
   followsToday,
   matchesTechKeywords,
 } from "./follow-bot";
 import type { FollowResult, PacingOptions } from "./follow-bot";
+import { acquireBrowser } from "./browser";
 
 // ── Types ─────────────────────────────────────────────────────
 interface ChainState {
@@ -117,7 +117,7 @@ async function runChain(state: ChainState, pacing: PacingOptions): Promise<void>
     return;
   }
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const heartbeat = startHeartbeat(state);
 
   try {
@@ -196,7 +196,7 @@ async function runChain(state: ChainState, pacing: PacingOptions): Promise<void>
     }
   } finally {
     clearInterval(heartbeat);
-    await context.close();
+    await release();
   }
 }
 

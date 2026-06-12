@@ -1,6 +1,6 @@
 import type { Page } from "playwright";
 import * as readline from "readline";
-import { launchBrowser } from "./follow-bot";
+import { acquireBrowser } from "./browser";
 import { BurstScheduler, applyDelay } from "./pacing";
 import {
   loadDmLog,
@@ -106,7 +106,7 @@ async function send(): Promise<void> {
     saveDmLog(log);
   };
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
     for (const handle of handles) {
@@ -173,7 +173,7 @@ async function send(): Promise<void> {
       await applyDelay(scheduler.next());
     }
   } finally {
-    await context.close();
+    await release();
   }
 
   const totalSent = log.filter((r) => r.status === "sent").length;
