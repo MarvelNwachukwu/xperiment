@@ -7,7 +7,7 @@
 
 Today every tool (`follow-bot`, `chain-runner`, `prospect`, `dm-bot`, `unfollow-bot`) calls `launchPersistentContext(PROFILE_DIR, …)` on the same `.chrome-profile` directory. Chrome enforces a single-instance lock per user-data-dir (`SingletonLock`), so a second tool launched while one is running collides — they fight over the same window or the second errors out.
 
-We want to run multiple tools at once — specifically a write tool (e.g. `follow`/`chain`) alongside a read-only tool (e.g. `prospect enrich`, "seeding") — sharing one logged-in session, without collision. We also want a guard that prevents two *write* tools from running concurrently, since that would multiply follow/unfollow velocity past the daily caps the pacing system enforces.
+We want to run multiple tools at once — specifically a write tool (e.g. `follow`/`chain`) alongside a read-only tool (e.g. `prospect enrich`, "seeding") — sharing one logged-in session, without collision. We also want a guard that prevents two *write* tools of the **same kind** from running concurrently, since that would multiply velocity past the daily caps the pacing system enforces. Writes are grouped into categories (`follow`-graph mutations vs `dm`), so tools in different categories — e.g. a follow tool and `dm --live` — may run together, but two follow-graph tools (or two `dm --live`) may not.
 
 ## Architecture
 
@@ -67,12 +67,13 @@ Each call site changes from `const context = await launchBrowser(); … await co
 
 ## Component: `write-lock.ts`
 
-Tool classification:
+Tool classification — write tools are grouped into **categories**; the lock is per-category, so tools in *different* categories can run concurrently, but two tools in the *same* category cannot:
 
-- **Write** (acquire the lock): `follow`, `chain`, `unfollow`, `dm --live`
-- **Read** (never touch the lock): `prospect sync` / `enrich` / `filter`, `dm` dry-run, `login`
+- **`follow` category** (graph mutations — share one lock): `follow`, `chain`, `unfollow`. These all change who you follow; running two at once doubles follow velocity, and `follow` + `unfollow` together is the heavily-flagged follow-churn pattern.
+- **`dm` category** (own lock): `dm --live`. DMs are a separate action with their own limit, so `dm --live` may run **concurrently with a follow-category tool** (e.g. `follow` + `dm --live`), but not with another `dm --live`.
+- **Read** (never touch any lock): `prospect sync` / `enrich` / `filter`, `dm` dry-run, `login`.
 
-Lock file: `output/.write.lock`, JSON `{ tool, pid, startedAt }`.
+Lock file is per category: `output/.write-<category>.lock` (e.g. `.write-follow.lock`, `.write-dm.lock`), JSON `{ tool, pid, startedAt }`.
 
 Pure decision core (unit-tested):
 
@@ -90,22 +91,23 @@ decideLock(existing: LockInfo | null, isAlive: (pid: number) => boolean, force: 
 Imperative shell:
 
 ```ts
-acquireWriteLock(tool: string, force: boolean): () => void  // returns release()
+type WriteCategory = "follow" | "dm";
+acquireWriteLock(category: WriteCategory, tool: string, force: boolean): () => void  // returns release()
 ```
 
-- Reads `output/.write.lock` (if any), calls `decideLock` with `isAlive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }`.
+- Reads `output/.write-<category>.lock` (if any), calls `decideLock` with `isAlive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }`. Only the lock for *this* category is consulted — a `dm --live` ignores the `follow` lock and vice-versa.
 - `"refuse"` → print the refusal and `process.exit(1)`:
   ```
   ✋ '<holder.tool>' is already running (pid <holder.pid>, since <startedAt>).
-  Running two write tools doubles follow velocity past the daily cap. Refusing.
+  Another '<category>' write tool would double velocity past the daily cap. Refusing.
   (use --force to override)
   ```
 - `"acquire"`/`"reclaim"` → write the lock file with this process's `{ tool, pid, startedAt }`, return `release()` which deletes the file.
 - `"bypass"` (force over a live holder) → log a prominent warning ("⚠ --force: write-guard bypassed, running concurrently with '<holder.tool>'") and return a **no-op `release()`** that leaves the holder's lock untouched.
 
-Lifecycle: write tools acquire the lock at startup, **before** `acquireBrowser()`. Release in a `finally`, and also register a `process.on("SIGINT")` / `process.on("exit")` best-effort cleanup so Ctrl-C frees it. The stale-PID check is the real safety net for hard kills.
+Lifecycle: write tools acquire their category's lock at startup, **before** `acquireBrowser()`. Release in a `finally`, and also register a `process.on("SIGINT")` / `process.on("exit")` best-effort cleanup so Ctrl-C frees it. The stale-PID check is the real safety net for hard kills.
 
-Each write tool's CLI parses a `--force` flag and threads it into `acquireWriteLock`.
+Each write tool's CLI parses a `--force` flag and threads it into `acquireWriteLock` along with its category (`follow` for `follow`/`chain`/`unfollow`, `dm` for `dm --live`).
 
 ## Login flow
 
@@ -130,10 +132,10 @@ Each write tool's CLI parses a `--force` flag and threads it into `acquireWriteL
 ## Out of Scope
 
 - A persistent keep-alive browser daemon that survives all tools exiting (explicitly declined in favor of auto-launch-on-first-use).
-- Per-action-type write locks (e.g. allowing `dm --live` concurrently with `follow`). v1 uses one global write lock for simplicity; revisit if needed.
-- Coordinating daily caps across concurrent tools (the single write lock makes this unnecessary for writes; reads have their own caps).
+- Finer-grained locks beyond the two categories (`follow`, `dm`). If a future action type needs its own concurrency lane, add a category; v1 ships these two.
+- Coordinating daily caps across concurrent tools (the per-category write locks make this unnecessary — within a category only one tool runs; across categories the action types are independent; reads have their own caps).
 
 ## Constants (added to `config.ts`)
 
 - `CDP_PORT = 9222` — debug port the shared browser listens on / tools connect to.
-- `WRITE_LOCK_FILE = path.join(OUTPUT_DIR, ".write.lock")`.
+- Write-lock files are derived per category as `path.join(OUTPUT_DIR, ".write-<category>.lock")` (no single constant needed).
