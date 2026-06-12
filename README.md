@@ -307,6 +307,36 @@ Every attempt is appended to `output/dm-log.json` with a status of `sent`, `skip
 
 Always dry-run first (`npm run dm`) and confirm the DM selectors work in your browser before going `--live`.
 
+## Running multiple tools at once
+
+All tools share **one** Chrome over CDP (`CDP_PORT`, default 9222). The first tool you start launches the browser; any tool you start afterward attaches to that same instance. One login serves all of them, so you can run, say, `prospect:enrich` in one terminal and `follow` in another without hitting Chrome's `SingletonLock` error.
+
+**Start the longer-running tool first.** Whichever tool launched the browser owns it. If that tool exits while another is attached, the shared browser closes and the attached tool stops with a "shared browser closed" message.
+
+### Write guard
+
+To prevent two tools from clobbering each other's state:
+
+- **Follow-category tools** (`follow`, `chain`, `unfollow`) are mutually exclusive. Starting a second one while the first is running refuses with a message that names the holder (pid + start time).
+- **`dm --live`** is its own separate category, so it *can* run alongside a follow-category tool — but not alongside another `dm --live`.
+- **Read-only commands** (`prospect sync`/`enrich`/`filter`, `dm` dry-run, `login`) are never blocked.
+- **`--force`** overrides the refusal. It logs a warning and proceeds without clobbering the holder's lock file, so the holder is not affected.
+
+Lock files live at `output/.write-follow.lock` and `output/.write-dm.lock`. If a run crashes without cleaning up, the stale lock is automatically reclaimed the next time a tool starts — it checks whether the recorded pid is still alive.
+
+### Example
+
+```bash
+# terminal 1 — read-only, never blocked
+npm run prospect:enrich
+
+# terminal 2 — follow-category write tool
+npm run follow -- @somedev --tech-only
+
+# terminal 3 — different category, runs alongside the follow tool
+npm run dm -- --live
+```
+
 ## The keyword list
 
 The scan classifies accounts by checking their bio against a list of ~70 keywords. These cover:
