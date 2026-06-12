@@ -1,5 +1,6 @@
 import type { Page, ElementHandle } from "playwright";
 import { acquireBrowser } from "./browser";
+import { acquireWriteLock } from "./write-lock";
 import * as fs from "fs";
 import * as readline from "readline";
 import {
@@ -388,19 +389,26 @@ async function follow(): Promise<void> {
   const source: "followers" | "following" = useFollowing ? "following" : "followers";
   const pageUrl = `https://x.com/${target}/${source}`;
 
+  const force = args.includes("--force");
+  const releaseLock = acquireWriteLock("follow", "follow", force);
+
   const { context, release } = await acquireBrowser();
-  const page = await context.newPage();
+  try {
+    const page = await context.newPage();
 
-  const result = await followFromPage({
-    page,
-    target,
-    pageUrl,
-    source,
-    bioFilter: techOnly ? matchesTechKeywords : undefined,
-  });
+    const result = await followFromPage({
+      page,
+      target,
+      pageUrl,
+      source,
+      bioFilter: techOnly ? matchesTechKeywords : undefined,
+    });
 
-  console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
-  await release();
+    console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
+  } finally {
+    await release();
+    releaseLock();
+  }
 }
 
 // ── Main (only runs when invoked directly) ────────────────────

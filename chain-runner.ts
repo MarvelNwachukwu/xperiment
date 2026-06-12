@@ -26,6 +26,7 @@ import {
 } from "./follow-bot";
 import type { FollowResult, PacingOptions } from "./follow-bot";
 import { acquireBrowser } from "./browser";
+import { acquireWriteLock } from "./write-lock";
 
 // ── Types ─────────────────────────────────────────────────────
 interface ChainState {
@@ -241,6 +242,9 @@ async function main(): Promise<void> {
   const resume = args.includes("--resume");
   const pacing = parsePacing(args);
 
+  const force = args.includes("--force");
+  const releaseLock = acquireWriteLock("follow", "chain", force);
+
   const burstDesc =
     `bursts of ${pacing.clusterMin}-${pacing.clusterMax}, ` +
     `${pacing.intraDelayMinSec}-${pacing.intraDelayMaxSec}s within / ` +
@@ -283,7 +287,11 @@ async function main(): Promise<void> {
     chainLog(`Starting new chain from seed @${target}`);
   }
 
-  await runChain(state, pacing);
+  try {
+    await runChain(state, pacing);
+  } finally {
+    releaseLock();
+  }
 }
 
 main().catch((err) => {

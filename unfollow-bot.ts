@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import * as fs from "fs";
 import { matchedTechKeywords } from "./tech-filter";
 import { acquireBrowser } from "./browser";
+import { acquireWriteLock } from "./write-lock";
 import {
   UNFOLLOW_CANDIDATES_FILE as CANDIDATES_FILE,
   UNFOLLOW_LOG_FILE,
@@ -207,8 +208,12 @@ async function scan(): Promise<void> {
 // ── Unfollow Command ───────────────────────────────────────────
 // Reads unfollow-candidates.json, unfollows accounts marked for removal
 async function unfollow(): Promise<void> {
+  const force = process.argv.slice(3).includes("--force");
+  const releaseLock = acquireWriteLock("follow", "unfollow", force);
+
   if (!fs.existsSync(CANDIDATES_FILE)) {
     console.error(`No candidates file found. Run "npm run scan" first.`);
+    releaseLock();
     process.exit(1);
   }
 
@@ -217,90 +222,96 @@ async function unfollow(): Promise<void> {
 
   if (toUnfollow.length === 0) {
     console.log("No accounts marked for unfollow. Nothing to do.");
+    releaseLock();
     process.exit(0);
   }
 
   console.log(`Found ${toUnfollow.length} accounts to unfollow.\n`);
 
   const { context, release } = await acquireBrowser();
-  const page = await context.newPage();
+  try {
+    const page = await context.newPage();
 
-  // Verify we're logged in
-  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3000);
+    // Verify we're logged in
+    await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
 
-  if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-    console.error("Not logged in. Run `npm run login` first.");
-    await release();
-    process.exit(1);
-  }
-
-  const logRecords = loadUnfollowLog();
-  const alreadyUnfollowed = new Set(logRecords.map((r) => r.username));
-  let unfollowCount = 0;
-
-  for (const candidate of toUnfollow) {
-    if (alreadyUnfollowed.has(candidate.username)) {
-      console.log(`  SKIP @${candidate.username} — already unfollowed`);
-      continue;
+    if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
+      console.error("Not logged in. Run `npm run login` first.");
+      await release();
+      releaseLock();
+      process.exit(1);
     }
 
-    try {
-      // Navigate to the user's profile
-      console.log(`  Unfollowing @${candidate.username}...`);
-      await page.goto(`https://x.com/${candidate.username}`, { waitUntil: "domcontentloaded" });
-      await page.waitForTimeout(2000);
+    const logRecords = loadUnfollowLog();
+    const alreadyUnfollowed = new Set(logRecords.map((r) => r.username));
+    let unfollowCount = 0;
 
-      // Find the Following/Unfollow button
-      const followingBtn = await page.$('[data-testid$="-unfollow"]');
-      if (!followingBtn) {
-        console.warn(`  Not following @${candidate.username} (no unfollow button). Skipping.`);
+    for (const candidate of toUnfollow) {
+      if (alreadyUnfollowed.has(candidate.username)) {
+        console.log(`  SKIP @${candidate.username} — already unfollowed`);
         continue;
       }
 
-      // Click the Following button (triggers confirmation dialog)
-      await followingBtn.click();
-      await page.waitForTimeout(1000);
-
-      // Confirm the unfollow in the dialog
-      const confirmBtn = await page.$('[data-testid="confirmationSheetConfirm"]');
-      if (confirmBtn) {
-        await confirmBtn.click();
+      try {
+        // Navigate to the user's profile
+        console.log(`  Unfollowing @${candidate.username}...`);
+        await page.goto(`https://x.com/${candidate.username}`, { waitUntil: "domcontentloaded" });
         await page.waitForTimeout(2000);
-      }
 
-      // Verify unfollow succeeded (button should now be "Follow")
-      const followBtn = await page.$('[data-testid$="-follow"]');
-      if (!followBtn) {
-        const btnText = await page.$('[data-testid$="-unfollow"]');
-        if (btnText) {
-          console.warn(`  Unfollow may have failed for @${candidate.username}, skipping.`);
+        // Find the Following/Unfollow button
+        const followingBtn = await page.$('[data-testid$="-unfollow"]');
+        if (!followingBtn) {
+          console.warn(`  Not following @${candidate.username} (no unfollow button). Skipping.`);
           continue;
         }
+
+        // Click the Following button (triggers confirmation dialog)
+        await followingBtn.click();
+        await page.waitForTimeout(1000);
+
+        // Confirm the unfollow in the dialog
+        const confirmBtn = await page.$('[data-testid="confirmationSheetConfirm"]');
+        if (confirmBtn) {
+          await confirmBtn.click();
+          await page.waitForTimeout(2000);
+        }
+
+        // Verify unfollow succeeded (button should now be "Follow")
+        const followBtn = await page.$('[data-testid$="-follow"]');
+        if (!followBtn) {
+          const btnText = await page.$('[data-testid$="-unfollow"]');
+          if (btnText) {
+            console.warn(`  Unfollow may have failed for @${candidate.username}, skipping.`);
+            continue;
+          }
+        }
+
+        unfollowCount++;
+        const record: UnfollowRecord = {
+          username: candidate.username,
+          timestamp: new Date().toISOString(),
+        };
+        logRecords.push(record);
+        fs.writeFileSync(UNFOLLOW_LOG_FILE, JSON.stringify(logRecords, null, 2));
+        alreadyUnfollowed.add(candidate.username);
+
+        console.log(`  ✓ Unfollowed @${candidate.username} (${unfollowCount}/${toUnfollow.length})`);
+
+        if (unfollowCount < toUnfollow.length) {
+          await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
+        }
+      } catch (err) {
+        console.warn(`  ⚠ Failed to unfollow @${candidate.username}: ${err}`);
+        continue;
       }
-
-      unfollowCount++;
-      const record: UnfollowRecord = {
-        username: candidate.username,
-        timestamp: new Date().toISOString(),
-      };
-      logRecords.push(record);
-      fs.writeFileSync(UNFOLLOW_LOG_FILE, JSON.stringify(logRecords, null, 2));
-      alreadyUnfollowed.add(candidate.username);
-
-      console.log(`  ✓ Unfollowed @${candidate.username} (${unfollowCount}/${toUnfollow.length})`);
-
-      if (unfollowCount < toUnfollow.length) {
-        await randomDelay(MIN_DELAY_SEC, MAX_DELAY_SEC);
-      }
-    } catch (err) {
-      console.warn(`  ⚠ Failed to unfollow @${candidate.username}: ${err}`);
-      continue;
     }
-  }
 
-  console.log(`\nSession complete. Unfollowed ${unfollowCount} accounts.`);
-  await release();
+    console.log(`\nSession complete. Unfollowed ${unfollowCount} accounts.`);
+  } finally {
+    await release();
+    releaseLock();
+  }
 }
 
 // ── Main ───────────────────────────────────────────────────────
