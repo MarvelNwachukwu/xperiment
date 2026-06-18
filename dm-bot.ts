@@ -1,6 +1,7 @@
 import type { Page } from "playwright";
 import * as readline from "readline";
-import { launchBrowser } from "./follow-bot";
+import { acquireBrowser } from "./browser";
+import { acquireWriteLock } from "./write-lock";
 import { BurstScheduler, applyDelay } from "./pacing";
 import {
   loadDmLog,
@@ -70,6 +71,9 @@ async function send(): Promise<void> {
   const args = process.argv.slice(3);
   const { live, approve } = parseDmFlags(args);
 
+  const force = args.includes("--force");
+  const releaseLock = live ? acquireWriteLock("dm", "dm", force) : () => {};
+
   const messages = loadMessages();
   const handles = Object.keys(messages);
   if (handles.length === 0) {
@@ -89,6 +93,7 @@ async function send(): Promise<void> {
   let dailyCount = dmsToday(log, new Date().toISOString());
   if (live && dailyCount >= DM_MAX_PER_DAY) {
     console.log(`Daily DM cap already reached (${dailyCount}/${DM_MAX_PER_DAY}). Stopping until UTC midnight.`);
+    releaseLock();
     return;
   }
 
@@ -106,7 +111,7 @@ async function send(): Promise<void> {
     saveDmLog(log);
   };
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
     for (const handle of handles) {
@@ -173,7 +178,8 @@ async function send(): Promise<void> {
       await applyDelay(scheduler.next());
     }
   } finally {
-    await context.close();
+    await release();
+    releaseLock();
   }
 
   const totalSent = log.filter((r) => r.status === "sent").length;

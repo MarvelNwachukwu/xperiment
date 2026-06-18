@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { Page } from "playwright";
-import { launchBrowser } from "./follow-bot";
+import { acquireBrowser } from "./browser";
 import { loadLog } from "./follow-bot";
 import { BurstScheduler, applyDelay, todayCountUTC } from "./pacing";
 import {
@@ -55,7 +55,7 @@ async function sync(): Promise<void> {
   const me = meArg.replace(/^@/, "");
   const pageUrl = `https://x.com/${me}/following`;
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
     console.log(`Navigating to ${pageUrl} ...`);
@@ -89,7 +89,7 @@ async function sync(): Promise<void> {
     saveFollowing(merged);
     console.log(`\nSynced. ${seen.size} scraped, ${merged.length} total in following.json.`);
   } finally {
-    await context.close();
+    await release();
   }
 }
 
@@ -203,7 +203,7 @@ async function enrich(): Promise<void> {
   };
   const scheduler = new BurstScheduler(pacing);
 
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
     console.log(`Enriching ${todo.length} profiles (${dailyCount}/${ENRICH_MAX_PER_DAY} done today).`);
@@ -225,7 +225,7 @@ async function enrich(): Promise<void> {
       await applyDelay(scheduler.next());
     }
   } finally {
-    await context.close();
+    await release();
   }
   console.log(`\nDone. ${profiles.length} profiles total in profiles.json.`);
 }

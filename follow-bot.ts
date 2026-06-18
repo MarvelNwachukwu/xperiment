@@ -1,10 +1,10 @@
-import { chromium } from "playwright";
-import type { Page, BrowserContext, ElementHandle } from "playwright";
+import type { Page, ElementHandle } from "playwright";
+import { acquireBrowser } from "./browser";
+import { acquireWriteLock } from "./write-lock";
 import * as fs from "fs";
 import * as readline from "readline";
 import {
   LOG_FILE,
-  PROFILE_DIR,
   FOLLOW_TIMEOUT_MS,
   SCROLL_WAIT_MS,
   RATE_LIMIT_THRESHOLD,
@@ -128,42 +128,18 @@ async function extractBio(cell: ElementHandle): Promise<string> {
   return (await cell.innerText().catch(() => "")).slice(0, 200);
 }
 
-// ── Browser Launch ─────────────────────────────────────────────
-// Uses a persistent Chrome profile so cookies, sessions, and browser
-// state survive across runs — no separate cookies.json needed.
-// Also hides automation flags that X detects.
-export async function launchBrowser(): Promise<BrowserContext> {
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,
-    channel: "chrome",
-    viewport: { width: 1280, height: 800 },
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--no-first-run",
-      "--no-default-browser-check",
-    ],
-  });
-
-  // Remove navigator.webdriver flag on every new page before site JS runs
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-
-  return context;
-}
-
 // ── Login Command ──────────────────────────────────────────────
 async function login(): Promise<void> {
   console.log("Launching Chrome for manual login...");
   console.log("(Using persistent profile — cookies are saved automatically)\n");
-  const context = await launchBrowser();
+  const { context, release } = await acquireBrowser();
   const page = await context.newPage();
 
   await page.goto("https://x.com/login");
   await waitForEnter();
 
   console.log("Login session saved to persistent profile. You can close this now.");
-  await context.close();
+  await release();
 }
 
 // ── Follow Engine ─────────────────────────────────────────────
@@ -413,19 +389,26 @@ async function follow(): Promise<void> {
   const source: "followers" | "following" = useFollowing ? "following" : "followers";
   const pageUrl = `https://x.com/${target}/${source}`;
 
-  const context = await launchBrowser();
-  const page = await context.newPage();
+  const force = args.includes("--force");
+  const releaseLock = acquireWriteLock("follow", "follow", force);
 
-  const result = await followFromPage({
-    page,
-    target,
-    pageUrl,
-    source,
-    bioFilter: techOnly ? matchesTechKeywords : undefined,
-  });
+  const { context, release } = await acquireBrowser();
+  try {
+    const page = await context.newPage();
 
-  console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
-  await context.close();
+    const result = await followFromPage({
+      page,
+      target,
+      pageUrl,
+      source,
+      bioFilter: techOnly ? matchesTechKeywords : undefined,
+    });
+
+    console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);
+  } finally {
+    await release();
+    releaseLock();
+  }
 }
 
 // ── Main (only runs when invoked directly) ────────────────────

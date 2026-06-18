@@ -79,6 +79,11 @@ export const ENRICH_REST_DELAY_MIN_SEC = 20;
 export const ENRICH_REST_DELAY_MAX_SEC = 45;
 export const RECENT_TWEETS_COUNT = 5;
 
+// ── Shared Browser ────────────────────────────────────────────
+// Debug port the first ("owner") tool launches Chrome on; later tools connect
+// to it over CDP so one logged-in browser is shared. See browser.ts.
+export const CDP_PORT = 9222;
+
 // ── DM Sender (dm-bot) ────────────────────────────────────────
 // DMs are far more sensitive than follows — unsolicited DMs get flagged fast.
 // Hence a very low daily cap and slow, small-cluster pacing.
