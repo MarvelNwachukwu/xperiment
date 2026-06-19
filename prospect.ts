@@ -12,6 +12,7 @@ import {
 import { matchRole, roleLabel } from "./role-filter";
 import { matchCriteria } from "./criteria-filter";
 import { parseCount, parseCompany } from "./profile-parse";
+import { toCsv } from "./csv";
 import {
   SCROLL_WAIT_MS,
   ENRICH_MAX_PER_DAY,
@@ -316,6 +317,19 @@ async function filter(): Promise<void> {
   console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates [${mode}].`);
 }
 
+async function exportCsv(): Promise<void> {
+  if (!fs.existsSync(CANDIDATES_FILE)) {
+    console.error("No candidates.json — run `filter` first.");
+    process.exit(1);
+  }
+  const candidates = JSON.parse(fs.readFileSync(CANDIDATES_FILE, "utf-8"));
+  const columns = ["handle", "name", "location", "followers", "website", "matchedKeywords", "bio"];
+  const csv = toCsv(candidates, columns);
+  const outFile = CANDIDATES_FILE.replace(/\.json$/, ".csv");
+  fs.writeFileSync(outFile, csv);
+  console.log(`Wrote ${candidates.length} rows to ${outFile}`);
+}
+
 async function prepare(): Promise<void> {
   await sync();
   await enrich();
@@ -334,6 +348,7 @@ if (require.main === module) {
   else if (command === "enrich") run(enrich);
   else if (command === "filter") run(filter);
   else if (command === "prepare") run(prepare);
+  else if (command === "export-csv") run(exportCsv);
   else {
     console.error("Usage: tsx prospect.ts <sync|crawl|enrich|filter|prepare|export-csv>");
     process.exit(1);
