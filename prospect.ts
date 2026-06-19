@@ -93,6 +93,51 @@ async function sync(): Promise<void> {
   }
 }
 
+async function crawl(): Promise<void> {
+  const args = process.argv.slice(3);
+  const seedArg = args.find((a) => !a.startsWith("-"));
+  if (!seedArg) {
+    console.error("Usage: tsx prospect.ts crawl @seed [--side following|followers]");
+    process.exit(1);
+  }
+  const seed = seedArg.replace(/^@/, "");
+  const si = args.indexOf("--side");
+  const side = si !== -1 && args[si + 1] === "followers" ? "followers" : "following";
+  const pageUrl = `https://x.com/${seed}/${side}`;
+
+  const { context, release } = await acquireBrowser();
+  const page = await context.newPage();
+  try {
+    console.log(`Crawling ${pageUrl} ...`);
+    await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
+      throw new Error("Not logged in. Run `npm run login` first.");
+    }
+
+    const seen = new Map<string, ScrapedFollowing>();
+    let idleScrolls = 0;
+    while (idleScrolls < 3) {
+      const before = seen.size;
+      for (const row of await scrapeVisibleCells(page)) {
+        if (!seen.has(row.handle)) seen.set(row.handle, row);
+      }
+      console.log(`  Collected ${seen.size} so far...`);
+      if (seen.size === before) idleScrolls++;
+      else idleScrolls = 0;
+      await page.mouse.wheel(0, 3000);
+      await page.waitForTimeout(SCROLL_WAIT_MS);
+    }
+
+    // Discovered handles are NOT bot-followed, so botHandles is empty.
+    const merged = mergeFollowing(loadFollowing(), [...seen.values()], new Set(), new Date().toISOString());
+    saveFollowing(merged);
+    console.log(`\nCrawled @${seed}/${side}: ${seen.size} discovered, ${merged.length} total in following.json.`);
+  } finally {
+    await release();
+  }
+}
+
 export interface Profile {
   handle: string;
   name: string;
@@ -263,11 +308,12 @@ if (require.main === module) {
       process.exit(1);
     });
   if (command === "sync") run(sync);
+  else if (command === "crawl") run(crawl);
   else if (command === "enrich") run(enrich);
   else if (command === "filter") run(filter);
   else if (command === "prepare") run(prepare);
   else {
-    console.error("Usage: tsx prospect.ts <sync|enrich|filter|prepare>");
+    console.error("Usage: tsx prospect.ts <sync|crawl|enrich|filter|prepare|export-csv>");
     process.exit(1);
   }
 }
