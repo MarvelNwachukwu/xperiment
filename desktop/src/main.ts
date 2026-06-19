@@ -2,6 +2,8 @@ import { Command } from "@tauri-apps/plugin-shell";
 import type { Child } from "@tauri-apps/plugin-shell";
 import { ENGINE, REPO_DIR } from "./config";
 import { buildSteps, type ListForm } from "./steps";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) => {
@@ -40,8 +42,46 @@ async function runPipeline(form: ListForm): Promise<void> {
   await showResults(); // defined in Task 5
 }
 
-// Stubs filled in later tasks:
-async function showResults(): Promise<void> {}
+interface Candidate {
+  handle: string;
+  name: string;
+  location: string | null;
+  followers: number | null;
+  matchedKeywords: string[];
+}
+
+async function showResults(): Promise<void> {
+  let candidates: Candidate[] = [];
+  try {
+    candidates = JSON.parse(await readTextFile(`${REPO_DIR}/output/candidates.json`));
+  } catch {
+    $("results-table").textContent = "No candidates yet.";
+    return;
+  }
+  const rows = candidates
+    .map(
+      (c) =>
+        `<tr><td>@${c.handle}</td><td>${c.name ?? ""}</td><td>${c.location ?? ""}</td>` +
+        `<td>${c.followers ?? ""}</td><td>${(c.matchedKeywords ?? []).join(", ")}</td></tr>`
+    )
+    .join("");
+  $("results-table").innerHTML =
+    `<p>${candidates.length} matches.</p><table><thead><tr>` +
+    `<th>Handle</th><th>Name</th><th>Location</th><th>Followers</th><th>Matched</th>` +
+    `</tr></thead><tbody>${rows}</tbody></table>`;
+  ($("btn-export") as HTMLButtonElement).hidden = candidates.length === 0;
+}
+
+$("btn-export").addEventListener("click", async () => {
+  log("\n— Exporting CSV —");
+  const cmd = Command.create(ENGINE, ["tsx", "prospect.ts", "export-csv"], { cwd: REPO_DIR });
+  cmd.stdout.on("data", (l) => log(l));
+  await new Promise<void>((resolve) => {
+    cmd.on("close", () => resolve());
+    cmd.spawn();
+  });
+  await revealItemInDir(`${REPO_DIR}/output/candidates.csv`);
+});
 
 let loginChild: Child | null = null;
 
