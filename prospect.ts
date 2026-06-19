@@ -10,7 +10,9 @@ import {
   type ScrapedFollowing,
 } from "./following-store";
 import { matchRole, roleLabel } from "./role-filter";
+import { matchCriteria } from "./criteria-filter";
 import { parseCount, parseCompany } from "./profile-parse";
+import { toCsv } from "./csv";
 import {
   SCROLL_WAIT_MS,
   ENRICH_MAX_PER_DAY,
@@ -88,6 +90,51 @@ async function sync(): Promise<void> {
     );
     saveFollowing(merged);
     console.log(`\nSynced. ${seen.size} scraped, ${merged.length} total in following.json.`);
+  } finally {
+    await release();
+  }
+}
+
+async function crawl(): Promise<void> {
+  const args = process.argv.slice(3);
+  const seedArg = args.find((a) => !a.startsWith("-"));
+  if (!seedArg) {
+    console.error("Usage: tsx prospect.ts crawl @seed [--side following|followers]");
+    process.exit(1);
+  }
+  const seed = seedArg.replace(/^@/, "");
+  const si = args.indexOf("--side");
+  const side = si !== -1 && args[si + 1] === "followers" ? "followers" : "following";
+  const pageUrl = `https://x.com/${seed}/${side}`;
+
+  const { context, release } = await acquireBrowser();
+  const page = await context.newPage();
+  try {
+    console.log(`Crawling ${pageUrl} ...`);
+    await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
+      throw new Error("Not logged in. Run `npm run login` first.");
+    }
+
+    const seen = new Map<string, ScrapedFollowing>();
+    let idleScrolls = 0;
+    while (idleScrolls < 3) {
+      const before = seen.size;
+      for (const row of await scrapeVisibleCells(page)) {
+        if (!seen.has(row.handle)) seen.set(row.handle, row);
+      }
+      console.log(`  Collected ${seen.size} so far...`);
+      if (seen.size === before) idleScrolls++;
+      else idleScrolls = 0;
+      await page.mouse.wheel(0, 3000);
+      await page.waitForTimeout(SCROLL_WAIT_MS);
+    }
+
+    // Discovered handles are NOT bot-followed, so botHandles is empty.
+    const merged = mergeFollowing(loadFollowing(), [...seen.values()], new Set(), new Date().toISOString());
+    saveFollowing(merged);
+    console.log(`\nCrawled @${seed}/${side}: ${seen.size} discovered, ${merged.length} total in following.json.`);
   } finally {
     await release();
   }
@@ -236,17 +283,51 @@ export interface Candidate extends Profile {
   roleConfidence: "strong" | "review";
 }
 
+function readListFlag(args: string[], flag: string): string[] {
+  const i = args.indexOf(flag);
+  if (i === -1 || !args[i + 1]) return [];
+  return args[i + 1].split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 async function filter(): Promise<void> {
+  const args = process.argv.slice(3);
+  const who = readListFlag(args, "--who");
+  const where = readListFlag(args, "--where");
   const profiles = loadProfiles();
   const candidates: Candidate[] = [];
+
   for (const p of profiles) {
-    const m = matchRole(p.bio);
-    if (m.confidence === null) continue;
-    candidates.push({ ...p, roleConfidence: m.confidence, matchedKeywords: m.matchedKeywords });
+    if (who.length > 0) {
+      // Target Criteria mode: match the User's free-text keywords against bio + location.
+      const text = `${p.bio} ${p.location ?? ""}`;
+      const m = matchCriteria(text, who, where);
+      if (!m.matched) continue;
+      // ponytail: criteria mode has no strong/review split — "strong" just means "kept".
+      candidates.push({ ...p, roleConfidence: "strong", matchedKeywords: m.matchedKeywords });
+    } else {
+      // Default mode: the built-in decision-maker role filter.
+      const m = matchRole(p.bio);
+      if (m.confidence === null) continue;
+      candidates.push({ ...p, roleConfidence: m.confidence, matchedKeywords: m.matchedKeywords });
+    }
   }
+
   fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(candidates, null, 2));
-  const strong = candidates.filter((c) => c.roleConfidence === "strong").length;
-  console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates (${strong} strong, ${candidates.length - strong} review).`);
+  const mode = who.length > 0 ? `criteria(who=${who.length},where=${where.length})` : "role";
+  console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates [${mode}].`);
+}
+
+async function exportCsv(): Promise<void> {
+  if (!fs.existsSync(CANDIDATES_FILE)) {
+    console.error("No candidates.json — run `filter` first.");
+    process.exit(1);
+  }
+  const candidates = JSON.parse(fs.readFileSync(CANDIDATES_FILE, "utf-8"));
+  const columns = ["handle", "name", "location", "followers", "website", "matchedKeywords", "bio"];
+  const csv = toCsv(candidates, columns);
+  const outFile = CANDIDATES_FILE.replace(/\.json$/, ".csv");
+  fs.writeFileSync(outFile, csv);
+  console.log(`Wrote ${candidates.length} rows to ${outFile}`);
 }
 
 async function prepare(): Promise<void> {
@@ -263,11 +344,13 @@ if (require.main === module) {
       process.exit(1);
     });
   if (command === "sync") run(sync);
+  else if (command === "crawl") run(crawl);
   else if (command === "enrich") run(enrich);
   else if (command === "filter") run(filter);
   else if (command === "prepare") run(prepare);
+  else if (command === "export-csv") run(exportCsv);
   else {
-    console.error("Usage: tsx prospect.ts <sync|enrich|filter|prepare>");
+    console.error("Usage: tsx prospect.ts <sync|crawl|enrich|filter|prepare|export-csv>");
     process.exit(1);
   }
 }
