@@ -10,6 +10,7 @@ import {
   type ScrapedFollowing,
 } from "./following-store";
 import { matchRole, roleLabel } from "./role-filter";
+import { matchCriteria } from "./criteria-filter";
 import { parseCount, parseCompany } from "./profile-parse";
 import {
   SCROLL_WAIT_MS,
@@ -281,17 +282,38 @@ export interface Candidate extends Profile {
   roleConfidence: "strong" | "review";
 }
 
+function readListFlag(args: string[], flag: string): string[] {
+  const i = args.indexOf(flag);
+  if (i === -1 || !args[i + 1]) return [];
+  return args[i + 1].split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 async function filter(): Promise<void> {
+  const args = process.argv.slice(3);
+  const who = readListFlag(args, "--who");
+  const where = readListFlag(args, "--where");
   const profiles = loadProfiles();
   const candidates: Candidate[] = [];
+
   for (const p of profiles) {
-    const m = matchRole(p.bio);
-    if (m.confidence === null) continue;
-    candidates.push({ ...p, roleConfidence: m.confidence, matchedKeywords: m.matchedKeywords });
+    if (who.length > 0) {
+      // Target Criteria mode: match the User's free-text keywords against bio + location.
+      const text = `${p.bio} ${p.location ?? ""}`;
+      const m = matchCriteria(text, who, where);
+      if (!m.matched) continue;
+      // ponytail: criteria mode has no strong/review split — "strong" just means "kept".
+      candidates.push({ ...p, roleConfidence: "strong", matchedKeywords: m.matchedKeywords });
+    } else {
+      // Default mode: the built-in decision-maker role filter.
+      const m = matchRole(p.bio);
+      if (m.confidence === null) continue;
+      candidates.push({ ...p, roleConfidence: m.confidence, matchedKeywords: m.matchedKeywords });
+    }
   }
+
   fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(candidates, null, 2));
-  const strong = candidates.filter((c) => c.roleConfidence === "strong").length;
-  console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates (${strong} strong, ${candidates.length - strong} review).`);
+  const mode = who.length > 0 ? `criteria(who=${who.length},where=${where.length})` : "role";
+  console.log(`Filtered ${profiles.length} profiles -> ${candidates.length} candidates [${mode}].`);
 }
 
 async function prepare(): Promise<void> {
