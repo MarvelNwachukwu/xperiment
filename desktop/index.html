@@ -10,34 +10,36 @@
 
   <body>
     <main class="container">
-      <h1>Welcome to Tauri</h1>
+      <h1>List Builder</h1>
 
-      <div class="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/src/assets/vite.svg" class="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img
-            src="/src/assets/tauri.svg"
-            class="logo tauri"
-            alt="Tauri logo"
-          />
-        </a>
-        <a href="https://www.typescriptlang.org/docs" target="_blank">
-          <img
-            src="/src/assets/typescript.svg"
-            class="logo typescript"
-            alt="typescript logo"
-          />
-        </a>
-      </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+      <section id="connect">
+        <h2>1. Connect X</h2>
+        <button id="btn-connect">Connect X</button>
+        <button id="btn-connect-done" hidden>I've logged in</button>
+        <span id="connect-status"></span>
+      </section>
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p id="greet-msg"></p>
+      <section id="define">
+        <h2>2. Who are you looking for?</h2>
+        <label>Seed accounts (one @handle per line)<textarea id="seeds" rows="4"></textarea></label>
+        <label>Crawl side
+          <select id="side"><option value="following">following</option><option value="followers">followers</option></select>
+        </label>
+        <label>Looking for (keywords)<input id="who" placeholder="lawyer, attorney, barrister, SAN" /></label>
+        <label>Location (optional)<input id="where" placeholder="nigeria, lagos, abuja" /></label>
+        <button id="btn-run">Build list</button>
+      </section>
+
+      <section id="run">
+        <h2>3. Progress</h2>
+        <pre id="log"></pre>
+      </section>
+
+      <section id="results">
+        <h2>4. Results</h2>
+        <button id="btn-export" hidden>Export CSV</button>
+        <div id="results-table"></div>
+      </section>
     </main>
   </body>
 </html>
