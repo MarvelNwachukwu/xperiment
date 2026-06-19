@@ -1,4 +1,5 @@
 import { Command } from "@tauri-apps/plugin-shell";
+import type { Child } from "@tauri-apps/plugin-shell";
 import { ENGINE, REPO_DIR } from "./config";
 import { buildSteps, type ListForm } from "./steps";
 
@@ -41,7 +42,27 @@ async function runPipeline(form: ListForm): Promise<void> {
 
 // Stubs filled in later tasks:
 async function showResults(): Promise<void> {}
-async function connectX(): Promise<void> {}
+
+let loginChild: Child | null = null;
+
+async function connectX(): Promise<void> {
+  $("connect-status").textContent = "Opening login window…";
+  const cmd = Command.create(ENGINE, ["tsx", "follow-bot.ts", "login"], { cwd: REPO_DIR });
+  cmd.stdout.on("data", (l) => log(l));
+  cmd.stderr.on("data", (l) => log(l));
+  cmd.on("close", () => {
+    $("connect-status").textContent = "Connected ✓";
+    ($("btn-connect-done") as HTMLButtonElement).hidden = true;
+    loginChild = null;
+  });
+  loginChild = await cmd.spawn();
+  ($("btn-connect-done") as HTMLButtonElement).hidden = false;
+  $("connect-status").textContent = "Log in in the browser window, then click 'I've logged in'.";
+}
+
+$("btn-connect-done").addEventListener("click", async () => {
+  if (loginChild) await loginChild.write("\n"); // the Enter the login flow waits for
+});
 
 $("btn-run").addEventListener("click", () => {
   $("log").textContent = "";
