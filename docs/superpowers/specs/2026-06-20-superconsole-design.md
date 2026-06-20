@@ -58,7 +58,10 @@ Engine integration is the proven pattern, unchanged: a panel builds an arg list 
 
 - **Cap meters (`status.ts`):** read `output/follow-log.json`, `output/dm-log.json`, `output/profiles.json` via fs plugin; count today's UTC entries (same rule as the engine's `todayCountUTC`); render meters. Refresh on a timer while a tool runs.
 - **Write-lock surfaced:** the engine already enforces one follow-category write tool at a time (`output/.write-follow.lock`; DM is its own category). The app reads the lock files to **pre-disable** Start for a second follow-category tool and show a banner ("Follow is running — stop it first"); if the engine still refuses (e.g. a CLI run holds it), the app surfaces the engine's `✋` message from the log.
-- **Stop:** kills the running child (`Child.kill()`). The engine's lock is freed on exit, or auto-reclaimed next run via the stale-PID check.
+- **Stop / kill / cleanup (first-class):**
+  - **Stop** (per running tool) — `Child.kill()` the active engine child; the panel re-enables. The app tracks every child it spawns so it can always stop them.
+  - **Cleanup** (status-bar action, always available) — handles orphans from crashes/closed windows/CLI runs: (a) kill any app-spawned children still tracked; (b) best-effort kill leftover **engine** processes (match the known commands — `tsx prospect.ts` / `follow-bot.ts` / `chain-runner.ts` / `dm-bot.ts` / `unfollow-bot.ts`) and the shared automation **Chrome** still bound to the profile; (c) delete **stale** write-lock files (`output/.write-*.lock`) whose recorded PID is dead. It reports what it cleaned in the log. Targeted by command name — it never touches unrelated processes.
+  - On window close, the app stops its tracked children so the GUI can't leave a silent background scraper running (the gap we hit this session).
 - **DM:** dry-run is the default action; **Confirm send** is a separate, explicitly-labelled button gated by a count confirm. No `--live` without that confirm.
 - **No footguns in GUI:** burst mode, `--force`, and cap overrides are never exposed. Power users use the CLI.
 
