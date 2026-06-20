@@ -1,4 +1,5 @@
 import { mountConsole } from "./console";
 import { buildPanel } from "./tools/build";
+import { followPanel } from "./tools/follow";
 
-mountConsole([buildPanel]); // follow/chain/unfollow/dm panels added in later tasks
+mountConsole([buildPanel, followPanel]);
