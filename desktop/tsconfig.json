@@ -20,5 +20,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["src/steps.test.ts"]
+  "exclude": ["src/steps.test.ts", "src/engine.test.ts", "src/status.test.ts"]
 }
