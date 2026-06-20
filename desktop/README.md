@@ -1,13 +1,13 @@
-# List Builder — Desktop Shell (dev)
+# Xperiment — Desktop Console
 
-A Tauri v2 desktop GUI that drives the existing list-builder engine through a point-and-click UI. Phase 1 (read-only): Connect X, define seeds + target criteria, run the crawl/enrich/filter pipeline with live progress, view results, export CSV. No code changes to the engine — the app is a launcher over commands that already exist in the repo root.
+Xperiment is a Tauri v2 desktop command-center for the X growth toolkit. It exposes the full engine (Build List, Follow, Chain, Unfollow, DM) through a graphite/violet GUI with a sidebar nav, live log, daily cap meters, and Stop/Cleanup controls. No code changes to the engine — the app spawns the existing CLI tools from the repo root.
 
 ## Prerequisites
 
 1. **Rust + Tauri toolchain** — install if you don't have it: <https://tauri.app/start/prerequisites/>
 2. **Node** (v18+ recommended) — the engine runs via `npx tsx`.
-3. **The repo root** — the engine (`prospect.ts`, `follow-bot.ts`) lives there and must be checked out alongside `desktop/`.
-4. **A logged-in X session** — either use the in-app Connect X button (see flow below), or run `npm run login` from the repo root before launching the app.
+3. **The repo root** — all engine scripts (`follow-bot.ts`, `chain-runner.ts`, etc.) live there and must be checked out alongside `desktop/`.
+4. **A logged-in X session** — use the in-app **Connect X** button in the status bar (see below). The app opens a Chrome window to X; once detected as signed in, the status bar turns green and the window can be closed.
 
 ## Setup
 
@@ -27,20 +27,30 @@ A Tauri v2 desktop GUI that drives the existing list-builder engine through a po
 
    A desktop window opens. First launch triggers a Rust compile — this takes a minute or two; subsequent starts are fast.
 
-## In-app flow
+## Console layout
 
-1. **Connect X** — click "Connect X". A Chrome window opens to X login. Sign in, then click "I've logged in" in the app. The session is saved to the engine's profile directory and persists across runs.
+The window is divided into three regions:
 
-2. **Define** — enter one seed `@handle` per line, choose crawl side (following/followers), type "Looking for" keywords (e.g. `lawyer, attorney`), and optionally a Location filter (e.g. `nigeria, lagos`).
+**Status bar (top):** Shows the connection dot (grey = not connected, green = connected), cap meters (`follow N/350 · dm N/30` refreshed every 4 s), a **Stop** button (kills any running engine process), and a **Cleanup** button (kills stray engine/Chrome processes and removes stale write-locks).
 
-3. **Build list** — click the button. The log pane streams the engine's stdout: crawl → enrich → filter. This drives your real Chrome instance against X.
+**Sidebar (left):** Five nav buttons — one per tool. Click to switch panels; the active panel is highlighted in violet.
 
-4. **Results** — when the pipeline finishes, the results table shows matches with handle, name, location, follower count, and matched keywords.
+**Log pane (bottom):** Streams the engine's stdout/stderr in a monospace pane. Cleared automatically when you start a new run.
 
-5. **Export CSV** — click "Export CSV". The engine writes `output/candidates.csv` in the repo root and the file manager opens revealing it.
+## Tools
+
+- **Build List** — crawl seed accounts (following or followers side), enrich profiles, filter to keyword/location matches, view results table, export CSV.
+- **Follow** — follow people from a target account's followers or following list; optionally filter to tech accounts only. Safe-paced with the 350/day cap.
+- **Chain** — long-running follow run that hops the social graph from a seed account. Use **Stop** in the status bar to end it; **Resume last** restarts from where it left off.
+- **Unfollow** — scan who you currently follow, review the non-tech candidates in a table (uncheck anyone you want to keep), then unfollow the checked ones.
+- **DM** — write a template with `{name}`/`{location}` placeholders; the panel personalises it per candidate, runs a dry-run first, then shows a confirm step before sending real DMs (30/day cap).
+
+## Strictly safe
+
+The GUI never exposes burst mode, `--force`, or cap overrides. Write-lock banners appear on Follow/Chain/Unfollow panels when a conflicting tool is already running. DM is always dry-run first — real sends require an explicit second click on the confirm button.
 
 ## Notes
 
-- **This is the dev shell.** It runs against Node and Chrome installed on your machine via `npx` — no bundled runtime. Packaging into a double-click installer (bundling Node + Chromium, signing/notarization, per-OS builds) is a separate future step (Plan 3) and requires a human to click through the GUI smoke tests.
-- The engine's output files (`output/candidates.json`, `output/candidates.csv`) are written to the repo root, not inside `desktop/`.
-- If X rate-limits a crawl, rerun just that step from the CLI (`npm run crawl <handle>`) and then resume from the app.
+- **Connect X** — click the button in the status bar. A Chrome window opens; if an existing session is detected the status flips to Connected immediately. Otherwise sign in manually; the sentinel is emitted when you complete login.
+- Output files (`output/*.json`, `output/candidates.csv`) are written to the repo root, not inside `desktop/`.
+- Packaging into a double-click installer (bundling Node + Chromium, signing/notarization, per-OS builds) is a separate future step and requires a human to smoke-test the GUI at a display.
