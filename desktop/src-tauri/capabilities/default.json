@@ -11,13 +11,13 @@
       "identifier": "fs:allow-read-text-file",
       "allow": [{ "path": "$HOME/**" }]
     },
-    "shell:allow-execute",
-    "shell:allow-spawn",
     {
       "identifier": "shell:allow-execute",
-      "allow": [
-        { "name": "npx", "cmd": "npx", "args": true, "sidecar": false }
-      ]
+      "allow": [{ "name": "npx", "cmd": "npx", "args": true, "sidecar": false }]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [{ "name": "npx", "cmd": "npx", "args": true, "sidecar": false }]
     }
   ]
 }
