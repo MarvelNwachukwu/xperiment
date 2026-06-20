@@ -1,6 +1,7 @@
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile, exists } from "@tauri-apps/plugin-fs";
 import { runEngine, killAllEngine, type EngineRun } from "./engine";
 import { REPO_DIR } from "./config";
+import { countToday, capLabel } from "./status";
 
 export interface ConsoleCtx {
   log: (line: string) => void;
@@ -51,6 +52,19 @@ export function mountConsole(panels: Panel[]): void {
       r.done.then(() => { ctx.setBusy(false); current = null; }); return r; },
   };
 
+  // ---- cap meters (refresh every 4s) ----
+  const meters = app.querySelector<HTMLElement>("#meters")!;
+  const refreshMeters = async () => {
+    const now = new Date().toISOString();
+    const follows = (await ctx.readJson<{ timestamp: string }[]>("output/follow-log.json")) ?? [];
+    const dms = (await ctx.readJson<{ status: string; timestamp: string }[]>("output/dm-log.json")) ?? [];
+    const f = countToday(follows.map((r) => r.timestamp), now);
+    const d = countToday(dms.filter((r) => r.status === "sent").map((r) => r.timestamp), now);
+    meters.textContent = `follow ${capLabel(f, 350)}   ·   dm ${capLabel(d, 30)}`;
+  };
+  void refreshMeters();
+  setInterval(refreshMeters, 4000);
+
   // nav + panels
   const navButtons: HTMLButtonElement[] = [];
   const select = (p: Panel, btn: HTMLButtonElement) => {
@@ -77,6 +91,11 @@ export function mountConsole(panels: Panel[]): void {
 
   // Connect (wired fully in the Connect task; basic spawn here)
   app.querySelector<HTMLButtonElement>("#btn-connect")!.onclick = () => connectX(ctx, app);
+}
+
+// True if a follow-category write tool is currently running (lock file present).
+export async function followLockHeld(): Promise<boolean> {
+  try { return await exists(`${REPO_DIR}/output/.write-follow.lock`); } catch { return false; }
 }
 
 // eslint-disable-next-line prefer-const
