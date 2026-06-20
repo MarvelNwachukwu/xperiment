@@ -25,3 +25,24 @@ test("omits --where when blank; drops blank seeds; strips @", () => {
     ["tsx", "prospect.ts", "filter", "--who", "lawyer"],
   ]);
 });
+
+import { followArgs, chainArgs, unfollowScanArgs, unfollowArgs, dmArgs } from "./steps";
+
+test("followArgs strips @, adds flags only when set", () => {
+  assert.deepEqual(followArgs("@dev", { following: true, techOnly: true }),
+    ["tsx", "follow-bot.ts", "follow", "dev", "--following", "--tech-only"]);
+  assert.deepEqual(followArgs("dev", { following: false, techOnly: false }),
+    ["tsx", "follow-bot.ts", "follow", "dev"]);
+});
+
+test("chainArgs: seed vs resume", () => {
+  assert.deepEqual(chainArgs("@x", { resume: false }), ["tsx", "chain-runner.ts", "x"]);
+  assert.deepEqual(chainArgs("", { resume: true }), ["tsx", "chain-runner.ts", "--resume"]);
+});
+
+test("unfollow + dm args", () => {
+  assert.deepEqual(unfollowScanArgs(), ["tsx", "unfollow-bot.ts", "scan"]);
+  assert.deepEqual(unfollowArgs(), ["tsx", "unfollow-bot.ts", "unfollow"]);
+  assert.deepEqual(dmArgs({ live: false }), ["tsx", "dm-bot.ts", "send"]);
+  assert.deepEqual(dmArgs({ live: true }), ["tsx", "dm-bot.ts", "send", "--live"]);
+});
