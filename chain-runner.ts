@@ -25,7 +25,7 @@ import {
   matchesTechKeywords,
 } from "./follow-bot";
 import type { FollowResult, PacingOptions } from "./follow-bot";
-import { matchCriteria } from "./criteria-filter";
+import { parseKeywordsArg, keywordBioFilter } from "./criteria-filter";
 import { acquireBrowser } from "./browser";
 import { acquireWriteLock } from "./write-lock";
 
@@ -44,8 +44,7 @@ interface ChainState {
 
 // Build the bio filter for a chain: custom keywords if given, else the tech filter.
 function chainBioFilter(keywords: string[]): (bio: string) => boolean {
-  if (keywords.length === 0) return matchesTechKeywords;
-  return (bio: string) => matchCriteria(bio, keywords, []).matched;
+  return keywords.length === 0 ? matchesTechKeywords : keywordBioFilter(keywords);
 }
 function filterLabel(keywords: string[]): string {
   return keywords.length === 0 ? "tech accounts" : `accounts matching: ${keywords.join(", ")}`;
@@ -253,18 +252,11 @@ function parsePacing(args: string[]): PacingOptions {
   };
 }
 
-// Custom target keywords from `--keywords "law, attorney, barrister"` (comma-separated).
-function parseKeywords(args: string[]): string[] {
-  const i = args.indexOf("--keywords");
-  if (i === -1) return [];
-  return (args[i + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const resume = args.includes("--resume");
   const pacing = parsePacing(args);
-  const keywords = parseKeywords(args);
+  const keywords = parseKeywordsArg(args);
 
   const force = args.includes("--force");
   const releaseLock = acquireWriteLock("follow", "chain", force);
