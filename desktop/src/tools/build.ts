@@ -30,13 +30,13 @@ export const buildPanel: Panel = {
         who: ($("who") as HTMLInputElement).value,
         where: ($("where") as HTMLInputElement).value,
       };
-      for (const step of buildSteps(form)) { ctx.log(`\n— ${step.label} —`); await ctx.run(step.args).done; }
+      for (const step of buildSteps(form)) { ctx.log(`\n[ ${step.label} ]`); await ctx.run(step.args).done; }
       const cands = (await ctx.readJson<Candidate[]>("output/candidates.json")) ?? [];
       $("results").innerHTML = cands.length
         ? `<p>${cands.length} matches.</p><table><thead><tr><th>Handle</th><th>Name</th><th>Location</th><th>Followers</th><th>Matched</th></tr></thead><tbody>${cands.map((c) => `<tr><td>@${c.handle}</td><td>${c.name ?? ""}</td><td>${c.location ?? ""}</td><td>${c.followers ?? ""}</td><td>${(c.matchedKeywords ?? []).join(", ")}</td></tr>`).join("")}</tbody></table>`
         : `<p class="sub">No matches.</p>`;
       ($("export") as HTMLButtonElement).hidden = cands.length === 0;
     });
-    $("export").addEventListener("click", async () => { ctx.log("\n— Export CSV —"); await ctx.run(["tsx", "prospect.ts", "export-csv"]).done; });
+    $("export").addEventListener("click", async () => { ctx.log("\n[ Export CSV ]"); await ctx.run(["tsx", "prospect.ts", "export-csv"]).done; });
   },
 };

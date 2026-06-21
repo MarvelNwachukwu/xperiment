@@ -19,7 +19,7 @@ export const dmPanel: Panel = {
   render(host: HTMLElement, ctx: ConsoleCtx) {
     host.innerHTML = `
       <h2>DM</h2>
-      <div class="sub">Write one template; it personalizes per candidate. Dry-run first — sending is a separate confirm. Daily cap 30.</div>
+      <div class="sub">Write one template; it personalizes per candidate. Dry-run first, sending is a separate confirm. Daily cap 30.</div>
       <label class="field" style="max-width:640px"><span>Message template <small>(use {name}, {location})</small></span>
         <textarea id="tpl" rows="4" placeholder="Hi {name}, I'm reaching out to legal professionals in {location} about…"></textarea></label>
       <button id="prep" class="primary">Preview (dry-run)</button>
@@ -30,7 +30,7 @@ export const dmPanel: Panel = {
       const cands = (await ctx.readJson<Candidate[]>("output/candidates.json")) ?? [];
       const tpl = ($("tpl") as HTMLTextAreaElement).value.trim();
       if (!tpl) { ctx.log("Write a template first."); return 0; }
-      if (cands.length === 0) { ctx.log("No candidates.json — build a list first."); return 0; }
+      if (cands.length === 0) { ctx.log("No candidates.json. Build a list first."); return 0; }
       const messages: Record<string, { tone: string; text: string }> = {};
       for (const c of cands) messages[c.handle] = { tone: "warm", text: fillTemplate(tpl, c) };
       await writeTextFile(`${REPO_DIR}/output/messages.json`, JSON.stringify(messages, null, 2));

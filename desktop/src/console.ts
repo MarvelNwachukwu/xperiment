@@ -103,7 +103,7 @@ export function mountConsole(panels: Panel[]): void {
   // Stop / Cleanup / window-close
   stopBtn.onclick = async () => { if (current) await current.kill(); await killAllEngine(); ctx.setBusy(false); };
   app.querySelector<HTMLButtonElement>("#btn-cleanup")!.onclick = () => {
-    ctx.log("\n— Cleanup —");
+    ctx.log("\n[ Cleanup ]");
     runEngine(["tsx", "cleanup.ts"], ctx.log);
   };
   window.addEventListener("beforeunload", () => { void killAllEngine(); });
