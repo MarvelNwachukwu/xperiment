@@ -26,6 +26,7 @@ export function mountConsole(panels: Panel[]): void {
       <button id="btn-connect" class="ghost" style="padding:4px 10px">Connect X</button>
       <span class="grow"></span>
       <span class="meter" id="meters"></span>
+      <button id="btn-theme" class="icon-btn" title="Theme"></button>
       <button id="btn-stop" disabled>Stop</button>
       <button id="btn-cleanup" class="danger">Cleanup</button>
     </div>
@@ -39,6 +40,24 @@ export function mountConsole(panels: Panel[]): void {
   const host = app.querySelector<HTMLElement>("#host")!;
   const nav = app.querySelector<HTMLElement>("#nav")!;
   const stopBtn = app.querySelector<HTMLButtonElement>("#btn-stop")!;
+
+  // theme: cycle system → light → dark; persist; default follows OS
+  const themeBtn = app.querySelector<HTMLButtonElement>("#btn-theme")!;
+  const THEMES = ["system", "light", "dark"] as const;
+  const ICON = { system: "◐", light: "☀", dark: "☾" } as const;
+  const applyTheme = (t: (typeof THEMES)[number]) => {
+    if (t === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+    themeBtn.textContent = ICON[t];
+    themeBtn.title = `Theme: ${t}`;
+  };
+  let theme = (localStorage.getItem("theme") as (typeof THEMES)[number]) || "system";
+  applyTheme(theme);
+  themeBtn.onclick = () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    localStorage.setItem("theme", theme);
+    applyTheme(theme);
+  };
 
   let current: EngineRun | null = null;
   const ctx: ConsoleCtx = {
@@ -104,7 +123,10 @@ function connectX(ctx: ConsoleCtx, app: HTMLElement): void {
   const dot = app.querySelector<HTMLElement>("#conn-dot")!;
   const text = app.querySelector<HTMLElement>("#conn-text")!;
   text.textContent = "Opening login…";
-  const setConnected = () => { dot.classList.add("on"); text.textContent = "Connected"; };
+  const setConnected = () => {
+    dot.classList.add("on"); text.textContent = "Connected";
+    app.querySelector<HTMLButtonElement>("#btn-connect")!.style.display = "none";
+  };
   const r = runEngine(["tsx", "follow-bot.ts", "login"], (line) => {
     ctx.log(line);
     if (line.includes("XPERIMENT_LOGGED_IN")) setConnected();
