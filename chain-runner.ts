@@ -25,6 +25,7 @@ import {
   matchesTechKeywords,
 } from "./follow-bot";
 import type { FollowResult, PacingOptions } from "./follow-bot";
+import { matchCriteria } from "./criteria-filter";
 import { acquireBrowser } from "./browser";
 import { acquireWriteLock } from "./write-lock";
 
@@ -38,6 +39,16 @@ interface ChainState {
   totalFollowed: number;
   lastHeartbeat: string;
   status: "running" | "paused";
+  keywords?: string[]; // custom target keywords; empty/absent = tech filter
+}
+
+// Build the bio filter for a chain: custom keywords if given, else the tech filter.
+function chainBioFilter(keywords: string[]): (bio: string) => boolean {
+  if (keywords.length === 0) return matchesTechKeywords;
+  return (bio: string) => matchCriteria(bio, keywords, []).matched;
+}
+function filterLabel(keywords: string[]): string {
+  return keywords.length === 0 ? "tech accounts" : `accounts matching: ${keywords.join(", ")}`;
 }
 
 // ── State Persistence ─────────────────────────────────────────
@@ -55,7 +66,7 @@ function saveChainState(state: ChainState): void {
   fs.writeFileSync(CHAIN_STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-function initChainState(seedTarget: string): ChainState {
+function initChainState(seedTarget: string, keywords: string[]): ChainState {
   return {
     seedTarget,
     currentTarget: seedTarget,
@@ -65,6 +76,7 @@ function initChainState(seedTarget: string): ChainState {
     totalFollowed: 0,
     lastHeartbeat: new Date().toISOString(),
     status: "running",
+    keywords,
   };
 }
 
@@ -107,6 +119,10 @@ function startHeartbeat(state: ChainState): NodeJS.Timeout {
 
 // ── Chain Loop ────────────────────────────────────────────────
 async function runChain(state: ChainState, pacing: PacingOptions): Promise<void> {
+  const keywords = state.keywords ?? [];
+  const bioFilter = chainBioFilter(keywords);
+  const label = filterLabel(keywords);
+
   // Don't even launch Chrome if today's budget is already spent — the cron
   // watchdog will keep retrying, and we want those retries to be near-free
   // until the cap resets at UTC midnight. (Skipped in burst mode: cap = ∞.)
@@ -129,7 +145,7 @@ async function runChain(state: ChainState, pacing: PacingOptions): Promise<void>
       // Fresh page per hop to avoid memory accumulation over long runs
       const page = await context.newPage();
 
-      chainLog(`Chain depth ${state.chainDepth}: following tech accounts from @${target}'s following`);
+      chainLog(`Chain depth ${state.chainDepth}: following ${label} from @${target}'s following`);
       state.status = "running";
       saveChainState(state);
 
@@ -140,7 +156,7 @@ async function runChain(state: ChainState, pacing: PacingOptions): Promise<void>
           target,
           pageUrl,
           source: "following",
-          bioFilter: matchesTechKeywords,
+          bioFilter,
           dryStreakThreshold: DRY_STREAK_THRESHOLD,
           pacing,
         });
@@ -237,10 +253,18 @@ function parsePacing(args: string[]): PacingOptions {
   };
 }
 
+// Custom target keywords from `--keywords "law, attorney, barrister"` (comma-separated).
+function parseKeywords(args: string[]): string[] {
+  const i = args.indexOf("--keywords");
+  if (i === -1) return [];
+  return (args[i + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const resume = args.includes("--resume");
   const pacing = parsePacing(args);
+  const keywords = parseKeywords(args);
 
   const force = args.includes("--force");
   const releaseLock = acquireWriteLock("follow", "chain", force);
@@ -263,28 +287,32 @@ async function main(): Promise<void> {
       console.error("No chain-state.json found. Start a new chain with: npm run chain -- @handle");
       process.exit(1);
     }
-    chainLog(`Resuming chain from @${loaded.currentTarget} (depth ${loaded.chainDepth}, total followed: ${loaded.totalFollowed})`);
+    // Re-applying --keywords on resume overrides the saved set; otherwise keep it.
+    if (keywords.length > 0) loaded.keywords = keywords;
+    chainLog(`Resuming chain from @${loaded.currentTarget} (depth ${loaded.chainDepth}, total followed: ${loaded.totalFollowed}). Filtering ${filterLabel(loaded.keywords ?? [])}.`);
     state = loaded;
   } else {
-    // Seed = first non-flag arg (skip the value consumed by --max-per-day).
-    const maxIdx = args.indexOf("--max-per-day");
+    // Seed = first non-flag arg (skip values consumed by --max-per-day / --keywords).
+    const valueIdxs = new Set(
+      ["--max-per-day", "--keywords"].map((f) => args.indexOf(f)).filter((i) => i !== -1).map((i) => i + 1)
+    );
     const targetArg = args.find(
-      (a, idx) =>
-        !a.startsWith("-") && a.length > 0 && (maxIdx === -1 || idx !== maxIdx + 1)
+      (a, idx) => !a.startsWith("-") && a.length > 0 && !valueIdxs.has(idx)
     );
     if (!targetArg) {
       console.error(
         "Usage:\n" +
-          "  npm run chain -- @handle                 Start a new chain (safe paced)\n" +
-          "  npm run chain -- @handle --burst         Ignore daily cap, fast (manual only)\n" +
-          "  npm run chain -- @handle --max-per-day N  Override the daily cap\n" +
-          "  npm run chain -- --resume                Resume after crash/cron restart"
+          "  npm run chain -- @handle                      Start a new chain (safe paced)\n" +
+          "  npm run chain -- @handle --keywords \"law, attorney\"  Custom target audience (default: tech)\n" +
+          "  npm run chain -- @handle --burst              Ignore daily cap, fast (manual only)\n" +
+          "  npm run chain -- @handle --max-per-day N       Override the daily cap\n" +
+          "  npm run chain -- --resume                     Resume after crash/cron restart"
       );
       process.exit(1);
     }
     const target = targetArg.replace(/^@/, "");
-    state = initChainState(target);
-    chainLog(`Starting new chain from seed @${target}`);
+    state = initChainState(target, keywords);
+    chainLog(`Starting new chain from seed @${target}. Filtering ${filterLabel(keywords)}.`);
   }
 
   try {

@@ -40,6 +40,15 @@ test("chainArgs: seed vs resume", () => {
   assert.deepEqual(chainArgs("", { resume: true }), ["tsx", "chain-runner.ts", "--resume"]);
 });
 
+test("chainArgs: custom keywords (and blank is omitted)", () => {
+  assert.deepEqual(chainArgs("@x", { resume: false, keywords: "law, attorney" }),
+    ["tsx", "chain-runner.ts", "x", "--keywords", "law, attorney"]);
+  assert.deepEqual(chainArgs("@x", { resume: false, keywords: "   " }),
+    ["tsx", "chain-runner.ts", "x"]);
+  assert.deepEqual(chainArgs("", { resume: true, keywords: "finance" }),
+    ["tsx", "chain-runner.ts", "--resume", "--keywords", "finance"]);
+});
+
 test("unfollow + dm args", () => {
   assert.deepEqual(unfollowScanArgs(), ["tsx", "unfollow-bot.ts", "scan"]);
   assert.deepEqual(unfollowArgs(), ["tsx", "unfollow-bot.ts", "unfollow"]);
