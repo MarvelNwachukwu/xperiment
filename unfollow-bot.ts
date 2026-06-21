@@ -5,8 +5,17 @@ import { parseKeywordsArg, matchCriteria } from "./criteria-filter";
 import { acquireBrowser } from "./browser";
 import { acquireWriteLock } from "./write-lock";
 import {
+  captureFollowing,
+  fetchFollowingPage,
+  rateLimitSleepMs,
+  jitterMs,
+  RateLimitedError,
+  FeedParseError,
+} from "./x-graph";
+import {
   UNFOLLOW_CANDIDATES_FILE as CANDIDATES_FILE,
   UNFOLLOW_LOG_FILE,
+  UNFOLLOW_SCAN_STATE_FILE,
 } from "./config";
 
 // ── Configuration ──────────────────────────────────────────────
@@ -31,6 +40,12 @@ interface ScanResult {
 interface UnfollowRecord {
   username: string;
   timestamp: string;
+}
+
+interface ScanState {
+  cursor: string | null;
+  scanned: ScanResult[];
+  done: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -60,6 +75,42 @@ function loadUnfollowLog(): UnfollowRecord[] {
   }
 }
 
+function loadScanState(): ScanState | null {
+  if (!fs.existsSync(UNFOLLOW_SCAN_STATE_FILE)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(UNFOLLOW_SCAN_STATE_FILE, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function saveScanState(s: ScanState): void {
+  fs.writeFileSync(UNFOLLOW_SCAN_STATE_FILE, JSON.stringify(s, null, 2));
+}
+function clearScanState(): void {
+  if (fs.existsSync(UNFOLLOW_SCAN_STATE_FILE)) fs.unlinkSync(UNFOLLOW_SCAN_STATE_FILE);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Resolve the signed-in user's @handle from the home sidebar; exits if not logged in.
+async function resolveSelfHandle(page: Page): Promise<string> {
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3000);
+  if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
+    console.error("Not logged in. Run `npm run login` first.");
+    process.exit(1);
+  }
+  const link = await page.$('a[data-testid="AppTabBar_Profile_Link"]');
+  const href = await link?.getAttribute("href");
+  const handle = href?.replace(/^\//, "") ?? "";
+  if (!handle) {
+    console.error("Could not find your profile link. Run `npm run login` first.");
+    process.exit(1);
+  }
+  console.log(`Logged in as @${handle}`);
+  return handle;
+}
+
 // ── Scan Command ───────────────────────────────────────────────
 // Scrolls through your Following list, reads each bio, classifies
 // as tech/non-tech, and returns results. Releases the browser before returning.
@@ -70,25 +121,7 @@ async function scanViaDom(keywords: string[]): Promise<ScanResult[]> {
   // Navigate to your own following page
   // First go to home to figure out our own username
   console.log("Navigating to your profile...");
-  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3000);
-
-  if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-    console.error("Not logged in. Run `npm run login` first.");
-    await release();
-    process.exit(1);
-  }
-
-  // Get our username from the profile link in the sidebar
-  const profileLink = await page.$('a[data-testid="AppTabBar_Profile_Link"]');
-  if (!profileLink) {
-    console.error("Could not find profile link. Try running `npm run login` first.");
-    await release();
-    process.exit(1);
-  }
-  const profileHref = await profileLink.getAttribute("href");
-  const myUsername = profileHref?.replace(/^\//, "") ?? "";
-  console.log(`Logged in as @${myUsername}`);
+  const myUsername = await resolveSelfHandle(page);
 
   // Navigate to our following page
   console.log(`Navigating to https://x.com/${myUsername}/following ...`);
@@ -201,6 +234,71 @@ async function scanViaDom(keywords: string[]): Promise<ScanResult[]> {
   return results;
 }
 
+async function scanViaFeed(keywords: string[]): Promise<ScanResult[]> {
+  const { context, release } = await acquireBrowser();
+  const page = await context.newPage();
+  try {
+    const selfHandle = await resolveSelfHandle(page);
+
+    const prior = loadScanState();
+    const state: ScanState = prior && !prior.done
+      ? prior
+      : { cursor: null, scanned: [], done: false };
+    if (prior && !prior.done) {
+      console.log(`Resuming scan: ${state.scanned.length} already scanned.`);
+    }
+
+    const captured = await captureFollowing(page, selfHandle); // throws FeedParseError
+
+    let backoffMs = 2000;
+    while (!state.done) {
+      let result;
+      try {
+        result = await fetchFollowingPage(context, captured, state.cursor);
+      } catch (err) {
+        if (err instanceof RateLimitedError) {
+          const waitMs = rateLimitSleepMs({ remaining: 0, reset: err.resetSec }, Math.floor(Date.now() / 1000));
+          const ms = Math.max(waitMs, backoffMs);
+          console.log(`Rate limited. Waiting ${Math.round(ms / 1000)}s, then retrying.`);
+          await sleep(ms);
+          backoffMs = Math.min(backoffMs * 2, 60000);
+          continue; // retry same cursor
+        }
+        throw err; // FeedParseError -> bubble to caller (fail fast)
+      }
+      backoffMs = 2000;
+
+      for (const u of result.page.users) {
+        const { isMatch, matchedKeywords } = classifyBio(u.bio, keywords);
+        state.scanned.push({
+          username: u.username,
+          displayName: u.displayName,
+          bio: u.bio.substring(0, 200),
+          isTech: isMatch,
+          matchedKeywords,
+          markedForUnfollow: keywords.length > 0 ? isMatch : !isMatch,
+        });
+      }
+
+      state.cursor = result.page.nextCursor;
+      if (result.page.nextCursor === null) state.done = true;
+      saveScanState(state);
+      console.log(`  scanned ${state.scanned.length}`);
+
+      if (!state.done) {
+        const rlSleep = rateLimitSleepMs(result.rateLimit, Math.floor(Date.now() / 1000));
+        if (rlSleep > 0) console.log(`  rate limit low, sleeping ${Math.round(rlSleep / 1000)}s`);
+        await sleep(rlSleep > 0 ? rlSleep : jitterMs());
+      }
+    }
+
+    clearScanState();
+    return state.scanned;
+  } finally {
+    await release();
+  }
+}
+
 function writeResults(results: ScanResult[]): void {
   fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(results, null, 2));
   const marked = results.filter((r) => r.markedForUnfollow).length;
@@ -223,7 +321,21 @@ async function scan(): Promise<void> {
     console.log(`Keeping tech/crypto bios; everyone else becomes an unfollow candidate.`);
   }
 
-  const results = await scanViaDom(keywords); // Task 5 adds the feed path + routing
+  let results: ScanResult[];
+  if (useDom) {
+    results = await scanViaDom(keywords);
+  } else {
+    try {
+      results = await scanViaFeed(keywords);
+    } catch (err) {
+      if (err instanceof FeedParseError) {
+        console.error(`\nCouldn't read X's Following feed (${err.message}).`);
+        console.error(`Retry, or run the slower scroll scan with: npm run scan -- --dom`);
+        process.exit(1);
+      }
+      throw err;
+    }
+  }
   writeResults(results);
 }
 

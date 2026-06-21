@@ -17,6 +17,7 @@ export const MESSAGES_FILE = path.join(OUTPUT_DIR, "messages.json");
 export const DM_LOG_FILE = path.join(OUTPUT_DIR, "dm-log.json");
 export const UNFOLLOW_CANDIDATES_FILE = path.join(OUTPUT_DIR, "unfollow-candidates.json");
 export const UNFOLLOW_LOG_FILE = path.join(OUTPUT_DIR, "unfollow-log.json");
+export const UNFOLLOW_SCAN_STATE_FILE = path.join(OUTPUT_DIR, "unfollow-scan-state.json");
 
 // Browser session cache stays at repo root — moving it forces a re-login.
 export const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
