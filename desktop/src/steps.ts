@@ -32,9 +32,11 @@ export function followArgs(target: string, opts: { following: boolean; techOnly:
   return args;
 }
 
-export function chainArgs(seed: string, opts: { resume: boolean }): string[] {
-  if (opts.resume) return ["tsx", "chain-runner.ts", "--resume"];
-  return ["tsx", "chain-runner.ts", seed.trim().replace(/^@/, "")];
+export function chainArgs(seed: string, opts: { resume: boolean; keywords?: string }): string[] {
+  const kw = (opts.keywords ?? "").trim();
+  const kwArgs = kw ? ["--keywords", kw] : [];
+  if (opts.resume) return ["tsx", "chain-runner.ts", "--resume", ...kwArgs];
+  return ["tsx", "chain-runner.ts", seed.trim().replace(/^@/, ""), ...kwArgs];
 }
 
 export function unfollowScanArgs(): string[] {
