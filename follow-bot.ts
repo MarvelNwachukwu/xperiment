@@ -19,6 +19,7 @@ import {
   REST_DELAY_MAX_SEC,
 } from "./config";
 import { matchesTechKeywords } from "./tech-filter";
+import { parseKeywordsArg, keywordBioFilter } from "./criteria-filter";
 import { randInt, randomDelay } from "./pacing";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -383,15 +384,33 @@ export async function followFromPage(options: FollowEngineOptions): Promise<Foll
 // ── Follow Command ─────────────────────────────────────────────
 async function follow(): Promise<void> {
   const args = process.argv.slice(3);
-  const targetArg = args.find((a) => a.startsWith("@") || (!a.startsWith("-") && a !== "follow"));
+  // Skip the value consumed by --keywords so it can't be mistaken for the target.
+  const kwIdx = args.indexOf("--keywords");
+  const skip = new Set(kwIdx === -1 ? [] : [kwIdx + 1]);
+  const targetArg = args.find(
+    (a, i) => !skip.has(i) && (a.startsWith("@") || (!a.startsWith("-") && a !== "follow"))
+  );
   if (!targetArg) {
-    console.error("Usage: tsx follow-bot.ts follow @targethandle [--following] [--tech-only]");
+    console.error('Usage: tsx follow-bot.ts follow @targethandle [--following] [--tech-only] [--keywords "law, attorney"]');
     process.exit(1);
   }
   const target = targetArg.replace(/^@/, "");
 
   const useFollowing = args.includes("--following");
   const techOnly = args.includes("--tech-only");
+  const keywords = parseKeywordsArg(args);
+
+  // Filter precedence: custom keywords > --tech-only > none (follow everyone).
+  const bioFilter = keywords.length
+    ? keywordBioFilter(keywords)
+    : techOnly
+      ? matchesTechKeywords
+      : undefined;
+  const filterDesc = keywords.length
+    ? `bios matching: ${keywords.join(", ")}`
+    : techOnly
+      ? "tech/crypto bios"
+      : "everyone (no bio filter)";
 
   const source: "followers" | "following" = useFollowing ? "following" : "followers";
   const pageUrl = `https://x.com/${target}/${source}`;
@@ -402,13 +421,14 @@ async function follow(): Promise<void> {
   const { context, release } = await acquireBrowser();
   try {
     const page = await context.newPage();
+    console.log(`Following from @${target}'s ${source} — ${filterDesc}.`);
 
     const result = await followFromPage({
       page,
       target,
       pageUrl,
       source,
-      bioFilter: techOnly ? matchesTechKeywords : undefined,
+      bioFilter,
     });
 
     console.log(`\nSession complete. Followed ${result.followCount} users. (${result.reason})`);

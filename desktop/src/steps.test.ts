@@ -34,6 +34,12 @@ test("followArgs strips @, adds flags only when set", () => {
   assert.deepEqual(followArgs("dev", { following: false, techOnly: false }),
     ["tsx", "follow-bot.ts", "follow", "dev"]);
 });
+test("followArgs: keywords override --tech-only", () => {
+  assert.deepEqual(followArgs("@dev", { following: false, techOnly: true, keywords: "law, attorney" }),
+    ["tsx", "follow-bot.ts", "follow", "dev", "--keywords", "law, attorney"]);
+  assert.deepEqual(followArgs("@dev", { following: true, techOnly: false, keywords: "  " }),
+    ["tsx", "follow-bot.ts", "follow", "dev", "--following"]);
+});
 
 test("chainArgs: seed vs resume", () => {
   assert.deepEqual(chainArgs("@x", { resume: false }), ["tsx", "chain-runner.ts", "x"]);
@@ -51,6 +57,8 @@ test("chainArgs: custom keywords (and blank is omitted)", () => {
 
 test("unfollow + dm args", () => {
   assert.deepEqual(unfollowScanArgs(), ["tsx", "unfollow-bot.ts", "scan"]);
+  assert.deepEqual(unfollowScanArgs("law, attorney"), ["tsx", "unfollow-bot.ts", "scan", "--keywords", "law, attorney"]);
+  assert.deepEqual(unfollowScanArgs("   "), ["tsx", "unfollow-bot.ts", "scan"]);
   assert.deepEqual(unfollowArgs(), ["tsx", "unfollow-bot.ts", "unfollow"]);
   assert.deepEqual(dmArgs({ live: false }), ["tsx", "dm-bot.ts", "send"]);
   assert.deepEqual(dmArgs({ live: true }), ["tsx", "dm-bot.ts", "send", "--live"]);

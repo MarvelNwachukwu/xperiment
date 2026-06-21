@@ -28,3 +28,16 @@ export function matchCriteria(text: string, who: string[], where: string[]): Cri
   }
   return { matched: true, matchedKeywords: whoHits };
 }
+
+// ── Shared --keywords plumbing (chain / follow / unfollow) ────────────
+// Parse `--keywords "law, attorney, barrister"` (comma-separated) from argv. [] if absent.
+export function parseKeywordsArg(args: string[]): string[] {
+  const i = args.indexOf("--keywords");
+  if (i === -1) return [];
+  return (args[i + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+// A bio filter that matches any of the given keywords (whole-word).
+export function keywordBioFilter(keywords: string[]): (bio: string) => boolean {
+  return (bio: string) => matchCriteria(bio, keywords, []).matched;
+}

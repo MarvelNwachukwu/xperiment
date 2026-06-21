@@ -25,10 +25,15 @@ export function buildSteps(form: ListForm): Step[] {
   return steps;
 }
 
-export function followArgs(target: string, opts: { following: boolean; techOnly: boolean }): string[] {
+export function followArgs(
+  target: string,
+  opts: { following: boolean; techOnly: boolean; keywords?: string }
+): string[] {
   const args = ["tsx", "follow-bot.ts", "follow", target.trim().replace(/^@/, "")];
   if (opts.following) args.push("--following");
-  if (opts.techOnly) args.push("--tech-only");
+  const kw = (opts.keywords ?? "").trim();
+  if (kw) args.push("--keywords", kw); // keywords take precedence over --tech-only in the engine
+  else if (opts.techOnly) args.push("--tech-only");
   return args;
 }
 
@@ -39,8 +44,11 @@ export function chainArgs(seed: string, opts: { resume: boolean; keywords?: stri
   return ["tsx", "chain-runner.ts", seed.trim().replace(/^@/, ""), ...kwArgs];
 }
 
-export function unfollowScanArgs(): string[] {
-  return ["tsx", "unfollow-bot.ts", "scan"];
+export function unfollowScanArgs(keywords?: string): string[] {
+  const kw = (keywords ?? "").trim();
+  const args = ["tsx", "unfollow-bot.ts", "scan"];
+  if (kw) args.push("--keywords", kw);
+  return args;
 }
 
 export function unfollowArgs(): string[] {

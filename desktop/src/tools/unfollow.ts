@@ -12,8 +12,9 @@ export const unfollowPanel: Panel = {
   render(host: HTMLElement, ctx: ConsoleCtx) {
     host.innerHTML = `
       <h2>Unfollow</h2>
-      <div class="sub">Scan who you follow, review the non-tech list, then unfollow the ones you keep checked.</div>
+      <div class="sub">Scan who you follow, keep accounts matching your keywords, review the rest, then unfollow the ones left checked.</div>
       <div class="banner" id="lock" hidden>A follow-type tool is already running — Stop it first.</div>
+      <label class="field"><span>Keep keywords <small>comma-separated — bios that match are kept; blank keeps tech/crypto</small></span><input id="keywords" placeholder="law, attorney, barrister, counsel" /></label>
       <button id="scan" class="primary">Scan following</button>
       <div id="review"></div>`;
     const $ = (id: string) => host.querySelector<HTMLElement>("#" + id)!;
@@ -21,8 +22,9 @@ export const unfollowPanel: Panel = {
     followLockHeld().then((held) => { ($("lock") as HTMLElement).hidden = !held; scan.disabled = held; });
 
     scan.addEventListener("click", async () => {
+      const keywords = ($("keywords") as HTMLInputElement).value;
       ctx.clearLog(); scan.disabled = true;
-      await ctx.run(unfollowScanArgs()).done; scan.disabled = false;
+      await ctx.run(unfollowScanArgs(keywords)).done; scan.disabled = false;
       const rows = (await ctx.readJson<ScanRow[]>("output/unfollow-candidates.json")) ?? [];
       const flagged = rows.filter((r) => r.markedForUnfollow);
       $("review").innerHTML = `<p class="sub">${flagged.length} marked for unfollow. Uncheck anyone to keep, then Unfollow.</p>
