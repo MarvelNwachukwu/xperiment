@@ -94,3 +94,15 @@ Replace the clunky "I've logged in" button with auto-detection. On **Connect X**
 - Packaging into a distributable installer (bundle Node + Chromium, signing) — still the separate packaging plan; this remains `tauri dev`-runnable.
 - Burst / `--force` / cap-override in the GUI — deliberately CLI-only.
 - Multi-account; any hosted/server component (local-only, per ADR 0001).
+
+---
+
+## Visual refresh — Geist (2026-06-21)
+
+The graphite/violet command center re-skinned to Vercel's [Geist design system](https://vercel.com/design.md). Layout and behavior are unchanged; this is a token/typography swap only.
+
+- **Typography:** Geist Sans (UI) + Geist Mono (log, cap meters, tabular data), vendored from the `geist` npm package as variable `.woff2` in `desktop/src/assets/fonts/` and `@font-face`-loaded (no CDN — the app is local/offline). Tight heading letter-spacing; mono uses tabular figures.
+- **Color:** near-monochrome surfaces with a single blue accent (`#006bff` light / `#0a84ff` dark) reserved for the primary action per view. Hairline borders (`rgba(…, .09)`) carry hierarchy instead of shadows; surfaces are flat. State (ok/warn/danger) uses color **plus** label/icon, never color alone.
+- **Themes:** light + dark, both defined as CSS custom properties. Default follows the OS (`prefers-color-scheme`); a status-bar toggle cycles **system → light → dark** and persists in `localStorage`, overriding the OS via `:root[data-theme]`. `color-scheme` is set per theme so native scrollbars/controls track it.
+- **Geometry:** 6px radius everyday surfaces, 40px control height, focus ring `0 0 0 3px` accent-tint. Generous panel padding (28–32px).
+- **Unchanged:** the `◆ Xperiment` mark, the command-center layout (status bar · sidebar · panel · persistent log), every safety mechanic, and all engine wiring.
