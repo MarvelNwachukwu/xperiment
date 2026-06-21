@@ -93,11 +93,12 @@ function clearScanState(): void {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Resolve the signed-in user's @handle from the home sidebar; exits if not logged in.
-async function resolveSelfHandle(page: Page): Promise<string> {
+async function resolveSelfHandle(page: Page, release: () => Promise<void>): Promise<string> {
   await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3000);
   if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
     console.error("Not logged in. Run `npm run login` first.");
+    await release();
     process.exit(1);
   }
   const link = await page.$('a[data-testid="AppTabBar_Profile_Link"]');
@@ -105,6 +106,7 @@ async function resolveSelfHandle(page: Page): Promise<string> {
   const handle = href?.replace(/^\//, "") ?? "";
   if (!handle) {
     console.error("Could not find your profile link. Run `npm run login` first.");
+    await release();
     process.exit(1);
   }
   console.log(`Logged in as @${handle}`);
@@ -121,7 +123,7 @@ async function scanViaDom(keywords: string[]): Promise<ScanResult[]> {
   // Navigate to your own following page
   // First go to home to figure out our own username
   console.log("Navigating to your profile...");
-  const myUsername = await resolveSelfHandle(page);
+  const myUsername = await resolveSelfHandle(page, release);
 
   // Navigate to our following page
   console.log(`Navigating to https://x.com/${myUsername}/following ...`);
@@ -238,7 +240,7 @@ async function scanViaFeed(keywords: string[]): Promise<ScanResult[]> {
   const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
-    const selfHandle = await resolveSelfHandle(page);
+    const selfHandle = await resolveSelfHandle(page, release);
 
     const prior = loadScanState();
     const state: ScanState = prior && !prior.done
@@ -257,8 +259,10 @@ async function scanViaFeed(keywords: string[]): Promise<ScanResult[]> {
         result = await fetchFollowingPage(context, captured, state.cursor);
       } catch (err) {
         if (err instanceof RateLimitedError) {
-          const waitMs = rateLimitSleepMs({ remaining: 0, reset: err.resetSec }, Math.floor(Date.now() / 1000));
-          const ms = Math.max(waitMs, backoffMs);
+          const now = Math.floor(Date.now() / 1000);
+          const waitMs = rateLimitSleepMs({ remaining: 0, reset: err.resetSec }, now);
+          const floorMs = err.resetSec <= now ? 30000 : 0;
+          const ms = Math.max(waitMs, backoffMs, floorMs);
           console.log(`Rate limited. Waiting ${Math.round(ms / 1000)}s, then retrying.`);
           await sleep(ms);
           backoffMs = Math.min(backoffMs * 2, 60000);
