@@ -8,10 +8,10 @@ export const chainPanel: Panel = {
   render(host: HTMLElement, ctx: ConsoleCtx) {
     host.innerHTML = `
       <h2>Chain</h2>
-      <div class="sub">Long-running: hops the social graph, following accounts that match your keywords. Safe-paced; daily cap 350. Use Stop to end it.</div>
-      <div class="banner" id="lock" hidden>A follow-type tool is already running — Stop it first.</div>
+      <div class="sub">Runs long. Hops the social graph, following accounts that match your keywords. Safe-paced; daily cap 350. Use Stop to end it.</div>
+      <div class="banner" id="lock" hidden>A follow-type tool is already running. Stop it first.</div>
       <label class="field"><span>Seed account</span><input id="seed" placeholder="@vitalik" /></label>
-      <label class="field"><span>Target keywords <small>comma-separated — leave blank for tech/crypto</small></span><input id="keywords" placeholder="law, attorney, barrister, counsel" /></label>
+      <label class="field"><span>Target keywords <small>comma-separated. Blank uses tech/crypto</small></span><input id="keywords" placeholder="law, attorney, barrister, counsel" /></label>
       <button id="run" class="primary">Start chain</button>
       <button id="resume" class="ghost">Resume last</button>`;
     const $ = (id: string) => host.querySelector<HTMLElement>("#" + id)!;
