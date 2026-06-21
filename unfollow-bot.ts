@@ -62,17 +62,8 @@ function loadUnfollowLog(): UnfollowRecord[] {
 
 // ── Scan Command ───────────────────────────────────────────────
 // Scrolls through your Following list, reads each bio, classifies
-// as tech/non-tech, and writes candidates to unfollow-candidates.json
-async function scan(): Promise<void> {
-  const keywords = parseKeywordsArg(process.argv.slice(3));
-  // Custom keywords: matching bios are the unfollow candidates.
-  // Blank (CLI default): keep tech/crypto, flag everything else (the original cleanup).
-  if (keywords.length > 0) {
-    console.log(`Flagging bios matching: ${keywords.join(", ")} for unfollow; keeping everyone else.`);
-  } else {
-    console.log(`Keeping tech/crypto bios; everyone else becomes an unfollow candidate.`);
-  }
-
+// as tech/non-tech, and returns results. Releases the browser before returning.
+async function scanViaDom(keywords: string[]): Promise<ScanResult[]> {
   const { context, release } = await acquireBrowser();
   const page = await context.newPage();
 
@@ -113,8 +104,6 @@ async function scan(): Promise<void> {
 
   const results: ScanResult[] = [];
   const processedUsernames = new Set<string>();
-  let techCount = 0;
-  let nonTechCount = 0;
 
   console.log("\nScanning accounts you follow...\n");
 
@@ -175,11 +164,9 @@ async function scan(): Promise<void> {
       results.push(result);
 
       if (markedForUnfollow) {
-        nonTechCount++;
         const why = matchedKeywords.length ? ` — ${matchedKeywords.slice(0, 3).join(", ")}` : ` — "${bio.substring(0, 50)}${bio.length > 50 ? "..." : ""}"`;
         console.log(`  DROP  @${username}${why}`);
       } else {
-        techCount++;
         console.log(`  KEEP  @${username}`);
       }
     }
@@ -210,18 +197,34 @@ async function scan(): Promise<void> {
     }
   }
 
-  // Write results
-  fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(results, null, 2));
+  await release();
+  return results;
+}
 
+function writeResults(results: ScanResult[]): void {
+  fs.writeFileSync(CANDIDATES_FILE, JSON.stringify(results, null, 2));
+  const marked = results.filter((r) => r.markedForUnfollow).length;
   console.log(`\n--- Scan Complete ---`);
   console.log(`  Total scanned: ${results.length}`);
-  console.log(`  Keeping: ${techCount}`);
-  console.log(`  Marked for unfollow: ${nonTechCount}`);
+  console.log(`  Keeping: ${results.length - marked}`);
+  console.log(`  Marked for unfollow: ${marked}`);
   console.log(`\nResults saved to ${CANDIDATES_FILE}`);
-  console.log(`\nReview the file and set "markedForUnfollow": false for anyone you want to KEEP.`);
-  console.log(`Then run: npm run unfollow`);
+  console.log(`Review in the app (or edit the file), then run: npm run unfollow`);
+}
 
-  await release();
+async function scan(): Promise<void> {
+  const args = process.argv.slice(3);
+  const keywords = parseKeywordsArg(args);
+  const useDom = args.includes("--dom");
+
+  if (keywords.length > 0) {
+    console.log(`Flagging bios matching: ${keywords.join(", ")} for unfollow; keeping everyone else.`);
+  } else {
+    console.log(`Keeping tech/crypto bios; everyone else becomes an unfollow candidate.`);
+  }
+
+  const results = await scanViaDom(keywords); // Task 5 adds the feed path + routing
+  writeResults(results);
 }
 
 // ── Unfollow Command ───────────────────────────────────────────
