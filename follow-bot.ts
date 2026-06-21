@@ -135,8 +135,15 @@ async function login(): Promise<void> {
   const { context, release } = await acquireBrowser();
   const page = await context.newPage();
 
-  await page.goto("https://x.com/login");
-  await waitForEnter();
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  const onLoginPage = page.url().includes("/login") || page.url().includes("/i/flow/login");
+  if (!onLoginPage) {
+    console.log("XPERIMENT_LOGGED_IN"); // already authenticated — GUI flips to Connected
+  } else {
+    console.log("Log in in the browser window…");
+  }
+  await waitForEnter(); // CLI: press Enter when done. GUI: writes "\n" after it sees the sentinel or the user finishes.
 
   console.log("Login session saved to persistent profile. You can close this now.");
   await release();

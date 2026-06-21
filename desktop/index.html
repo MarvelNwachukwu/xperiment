@@ -4,57 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>List Builder</title>
+    <title>Xperiment</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
-
-  <body>
-    <main class="container">
-      <h1>List Builder</h1>
-
-      <section class="card">
-        <h2>1. Connect X</h2>
-        <div class="row">
-          <button id="btn-connect" class="primary">Connect X</button>
-          <button id="btn-connect-done" class="secondary" hidden>I've logged in</button>
-          <span id="connect-status" class="status"></span>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>2. Who are you looking for?</h2>
-        <label class="field">
-          <span>Seed accounts <small>(one @handle per line)</small></span>
-          <textarea id="seeds" rows="3" placeholder="@NigerianBar&#10;@somelawfirm"></textarea>
-        </label>
-        <label class="field">
-          <span>Crawl side</span>
-          <select id="side">
-            <option value="following">following</option>
-            <option value="followers">followers</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Looking for <small>(keywords, comma-separated)</small></span>
-          <input id="who" placeholder="lawyer, attorney, barrister, SAN" />
-        </label>
-        <label class="field">
-          <span>Location <small>(optional)</small></span>
-          <input id="where" placeholder="nigeria, lagos, abuja" />
-        </label>
-        <button id="btn-run" class="primary">Build list</button>
-      </section>
-
-      <section class="card">
-        <h2>3. Progress</h2>
-        <pre id="log" class="log"></pre>
-      </section>
-
-      <section class="card">
-        <h2>4. Results</h2>
-        <button id="btn-export" class="primary" hidden>Export CSV</button>
-        <div id="results-table"></div>
-      </section>
-    </main>
-  </body>
+  <body><div id="app"></div></body>
 </html>

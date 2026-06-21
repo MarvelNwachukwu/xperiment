@@ -12,6 +12,14 @@
       "allow": [{ "path": "$HOME/**" }]
     },
     {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "$HOME/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$HOME/**" }]
+    },
+    {
       "identifier": "shell:allow-execute",
       "allow": [{ "name": "npx", "cmd": "npx", "args": true, "sidecar": false }]
     },
