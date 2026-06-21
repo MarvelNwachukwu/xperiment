@@ -56,3 +56,18 @@ test("parseFollowingPage: skips unavailable (non-User) results", () => {
 test("parseFollowingPage: missing instructions -> FeedParseError", () => {
   assert.throws(() => parseFollowingPage({ data: {} }), FeedParseError);
 });
+
+import { rateLimitSleepMs } from "./x-graph";
+
+test("rateLimitSleepMs: plenty remaining -> 0", () => {
+  assert.equal(rateLimitSleepMs({ remaining: 50, reset: 9999 }, 1000), 0);
+});
+
+test("rateLimitSleepMs: low remaining -> sleep until reset + margin", () => {
+  // reset 30s from now, default margin 2000ms
+  assert.equal(rateLimitSleepMs({ remaining: 2, reset: 1030 }, 1000), 30_000 + 2000);
+});
+
+test("rateLimitSleepMs: low remaining but reset in the past -> just the margin", () => {
+  assert.equal(rateLimitSleepMs({ remaining: 0, reset: 900 }, 1000), 2000);
+});

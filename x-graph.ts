@@ -58,3 +58,26 @@ export function parseFollowingPage(json: unknown): FollowingPage {
 
   return { users, nextCursor: users.length > 0 ? bottomCursor : null };
 }
+
+export interface RateLimit {
+  remaining: number;
+  reset: number; // epoch seconds
+}
+
+// Sleep before the next request only when the window is nearly spent.
+// Returns ms to wait (0 if there is headroom).
+export function rateLimitSleepMs(
+  rl: RateLimit,
+  nowSec: number,
+  threshold = 5,
+  marginMs = 2000,
+): number {
+  if (rl.remaining > threshold) return 0;
+  const untilResetMs = (rl.reset - nowSec) * 1000;
+  return Math.max(0, untilResetMs) + marginMs;
+}
+
+// Small polite delay between pages so the read loop is not a tight burst.
+export function jitterMs(minMs = 300, maxMs = 800): number {
+  return Math.floor(minMs + Math.random() * (maxMs - minMs));
+}
