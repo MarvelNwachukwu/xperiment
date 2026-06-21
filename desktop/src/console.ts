@@ -123,7 +123,10 @@ function connectX(ctx: ConsoleCtx, app: HTMLElement): void {
   const dot = app.querySelector<HTMLElement>("#conn-dot")!;
   const text = app.querySelector<HTMLElement>("#conn-text")!;
   text.textContent = "Opening login…";
-  const setConnected = () => { dot.classList.add("on"); text.textContent = "Connected"; };
+  const setConnected = () => {
+    dot.classList.add("on"); text.textContent = "Connected";
+    app.querySelector<HTMLButtonElement>("#btn-connect")!.style.display = "none";
+  };
   const r = runEngine(["tsx", "follow-bot.ts", "login"], (line) => {
     ctx.log(line);
     if (line.includes("XPERIMENT_LOGGED_IN")) setConnected();
