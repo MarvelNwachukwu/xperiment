@@ -1,6 +1,8 @@
 // Read a logged-in user's Following list from X's GraphQL feed.
 // Parsing lives here so it is the single place that knows X's response shape.
 
+import type { Page, BrowserContext } from "playwright";
+
 export interface XUser {
   username: string;
   displayName: string;
@@ -80,4 +82,66 @@ export function rateLimitSleepMs(
 // Small polite delay between pages so the read loop is not a tight burst.
 export function jitterMs(minMs = 300, maxMs = 800): number {
   return Math.floor(minMs + Math.random() * (maxMs - minMs));
+}
+
+export interface CapturedReq {
+  url: string;
+  headers: Record<string, string>;
+}
+
+// Thrown on HTTP 429 so the caller can back off and retry the same cursor.
+export class RateLimitedError extends Error {
+  constructor(public resetSec: number) {
+    super("rate limited");
+  }
+}
+
+const FOLLOWING_RE = /\/graphql\/[^/]+\/Following\?/;
+
+// Open the signed-in user's Following page and capture the real GraphQL request.
+export async function captureFollowing(
+  page: Page,
+  selfHandle: string,
+  timeoutMs = 15000,
+): Promise<CapturedReq> {
+  const reqP = page.waitForRequest((r) => FOLLOWING_RE.test(r.url()), { timeout: timeoutMs });
+  await page.goto(`https://x.com/${selfHandle}/following`, { waitUntil: "domcontentloaded" });
+  const req = await reqP.catch(() => {
+    throw new FeedParseError("Did not see X's Following request (the page may have changed).");
+  });
+  return { url: req.url(), headers: req.headers() };
+}
+
+// Replay the captured request with a new cursor and parse one page.
+export async function fetchFollowingPage(
+  context: BrowserContext,
+  captured: CapturedReq,
+  cursor: string | null,
+): Promise<{ page: FollowingPage; rateLimit: RateLimit }> {
+  let url = captured.url;
+  if (cursor) {
+    const u = new URL(captured.url);
+    const vars = JSON.parse(u.searchParams.get("variables") ?? "{}");
+    vars.cursor = cursor;
+    u.searchParams.set("variables", JSON.stringify(vars));
+    url = u.toString();
+  }
+
+  const resp = await context.request.get(url, { headers: captured.headers });
+  const h = resp.headers();
+  const rateLimit: RateLimit = {
+    remaining: Number(h["x-rate-limit-remaining"] ?? "999"),
+    reset: Number(h["x-rate-limit-reset"] ?? "0"),
+  };
+
+  if (resp.status() === 429) throw new RateLimitedError(rateLimit.reset);
+  if (!resp.ok()) throw new FeedParseError(`Following feed HTTP ${resp.status()}`);
+
+  let json: unknown;
+  try {
+    json = await resp.json();
+  } catch {
+    throw new FeedParseError("Following feed did not return JSON.");
+  }
+  return { page: parseFollowingPage(json), rateLimit };
 }
