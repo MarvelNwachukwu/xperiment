@@ -12,9 +12,9 @@ export const unfollowPanel: Panel = {
   render(host: HTMLElement, ctx: ConsoleCtx) {
     host.innerHTML = `
       <h2>Unfollow</h2>
-      <div class="sub">Scan who you follow, keep accounts matching your keywords, review the rest, then unfollow the ones left checked.</div>
+      <div class="sub">Scan who you follow, flag the accounts whose bio matches your keywords, review the list, then unfollow the ones left checked.</div>
       <div class="banner" id="lock" hidden>A follow-type tool is already running — Stop it first.</div>
-      <label class="field"><span>Keep keywords <small>comma-separated — bios that match are kept; blank keeps tech/crypto</small></span><input id="keywords" placeholder="law, attorney, barrister, counsel" /></label>
+      <label class="field"><span>Unfollow keywords <small>comma-separated — bios that match get flagged to unfollow; blank flags non-tech accounts</small></span><input id="keywords" placeholder="crypto, nft, $, airdrop" /></label>
       <button id="scan" class="primary">Scan following</button>
       <div id="review"></div>`;
     const $ = (id: string) => host.querySelector<HTMLElement>("#" + id)!;

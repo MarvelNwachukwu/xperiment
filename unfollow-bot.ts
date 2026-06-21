@@ -65,8 +65,13 @@ function loadUnfollowLog(): UnfollowRecord[] {
 // as tech/non-tech, and writes candidates to unfollow-candidates.json
 async function scan(): Promise<void> {
   const keywords = parseKeywordsArg(process.argv.slice(3));
-  const audience = keywords.length > 0 ? `bios matching: ${keywords.join(", ")}` : "tech/crypto bios";
-  console.log(`Keeping ${audience}; everyone else becomes an unfollow candidate.`);
+  // Custom keywords: matching bios are the unfollow candidates.
+  // Blank (CLI default): keep tech/crypto, flag everything else (the original cleanup).
+  if (keywords.length > 0) {
+    console.log(`Flagging bios matching: ${keywords.join(", ")} for unfollow; keeping everyone else.`);
+  } else {
+    console.log(`Keeping tech/crypto bios; everyone else becomes an unfollow candidate.`);
+  }
 
   const { context, release } = await acquireBrowser();
   const page = await context.newPage();
@@ -156,6 +161,8 @@ async function scan(): Promise<void> {
       }
 
       const { isMatch, matchedKeywords } = classifyBio(bio, keywords);
+      // Custom keywords → unfollow the matches. Blank → unfollow the non-matches (tech cleanup).
+      const markedForUnfollow = keywords.length > 0 ? isMatch : !isMatch;
 
       const result: ScanResult = {
         username,
@@ -163,16 +170,17 @@ async function scan(): Promise<void> {
         bio: bio.substring(0, 200),
         isTech: isMatch,
         matchedKeywords,
-        markedForUnfollow: !isMatch,
+        markedForUnfollow,
       };
       results.push(result);
 
-      if (isMatch) {
-        techCount++;
-        console.log(`  KEEP  @${username} — ${matchedKeywords.slice(0, 3).join(", ")}`);
-      } else {
+      if (markedForUnfollow) {
         nonTechCount++;
-        console.log(`  DROP  @${username} — "${bio.substring(0, 60)}${bio.length > 60 ? "..." : ""}"`);
+        const why = matchedKeywords.length ? ` — ${matchedKeywords.slice(0, 3).join(", ")}` : ` — "${bio.substring(0, 50)}${bio.length > 50 ? "..." : ""}"`;
+        console.log(`  DROP  @${username}${why}`);
+      } else {
+        techCount++;
+        console.log(`  KEEP  @${username}`);
       }
     }
 
@@ -207,8 +215,8 @@ async function scan(): Promise<void> {
 
   console.log(`\n--- Scan Complete ---`);
   console.log(`  Total scanned: ${results.length}`);
-  console.log(`  Matched (keeping): ${techCount}`);
-  console.log(`  Unmatched (unfollow candidates): ${nonTechCount}`);
+  console.log(`  Keeping: ${techCount}`);
+  console.log(`  Marked for unfollow: ${nonTechCount}`);
   console.log(`\nResults saved to ${CANDIDATES_FILE}`);
   console.log(`\nReview the file and set "markedForUnfollow": false for anyone you want to KEEP.`);
   console.log(`Then run: npm run unfollow`);
