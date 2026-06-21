@@ -199,7 +199,7 @@ async function scanViaDom(keywords: string[]): Promise<ScanResult[]> {
       results.push(result);
 
       if (markedForUnfollow) {
-        const why = matchedKeywords.length ? ` — ${matchedKeywords.slice(0, 3).join(", ")}` : ` — "${bio.substring(0, 50)}${bio.length > 50 ? "..." : ""}"`;
+        const why = matchedKeywords.length ? `: ${matchedKeywords.slice(0, 3).join(", ")}` : `: "${bio.substring(0, 50)}${bio.length > 50 ? "..." : ""}"`;
         console.log(`  DROP  @${username}${why}`);
       } else {
         console.log(`  KEEP  @${username}`);
@@ -387,7 +387,7 @@ async function unfollow(): Promise<void> {
 
     for (const candidate of toUnfollow) {
       if (alreadyUnfollowed.has(candidate.username)) {
-        console.log(`  SKIP @${candidate.username} — already unfollowed`);
+        console.log(`  SKIP @${candidate.username} (already unfollowed)`);
         continue;
       }
 
@@ -468,8 +468,8 @@ if (command === "scan") {
 } else {
   console.error(
     "Usage:\n" +
-    "  npm run scan       — Scan your following list, classify tech vs non-tech\n" +
-    "  npm run unfollow   — Unfollow accounts marked in unfollow-candidates.json"
+    "  npm run scan       Scan your following list, classify tech vs non-tech\n" +
+    "  npm run unfollow   Unfollow accounts marked in unfollow-candidates.json"
   );
   process.exit(1);
 }
