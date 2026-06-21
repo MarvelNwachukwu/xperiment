@@ -1,11 +1,17 @@
 [package]
 name = "desktop"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Xperiment"
 authors = ["you"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# Name the dev binary after the product so the macOS Dock/app-switcher shows
+# "Xperiment" in `tauri dev` (the bundled app already uses productName).
+[[bin]]
+name = "Xperiment"
+path = "src/main.rs"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
