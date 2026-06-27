@@ -2,14 +2,59 @@
 
 Xperiment is a Tauri v2 desktop command-center for the X growth toolkit. It exposes the full engine (Build List, Follow, Chain, Unfollow, DM) through a graphite/violet GUI with a sidebar nav, live log, daily cap meters, and Stop/Cleanup controls. No code changes to the engine — the app spawns the existing CLI tools from the repo root.
 
-## Prerequisites
+## Install
+
+### Prerequisite
+
+**Google Chrome must be installed.** The app drives Chrome to handle X authentication; it does not bundle its own browser.
+
+### Getting the app
+
+Download the latest installer from the [GitHub Releases](https://github.com/MarvelNwachukwu/xperiment/releases) page:
+
+- **macOS (Apple Silicon):** `.dmg` file
+- **Windows:** `.exe` file
+
+### First-open bypass (unsigned app)
+
+On first launch, you may see a security warning because the app is not yet code-signed. Follow these steps:
+
+**macOS:**
+1. Right-click the Xperiment app
+2. Click "Open"
+3. Click "Open" again on the confirmation dialog
+
+**Windows:**
+1. SmartScreen will appear
+2. Click "More info"
+3. Click "Run anyway"
+
+### Running from source
+
+If you clone the repo and want to build and run the app locally during development, use:
+
+```bash
+npm run tauri dev
+```
+
+### Data location
+
+Your data (built lists, login session) are stored in your operating system's app-data directory, not in the repo. This means the data persists even if you move or delete the installation folder.
+
+### CI builds
+
+Release packages are built automatically on GitHub Actions when you push a tag matching `v*` (e.g., `v0.2.0`). Download the `.dmg` or `.exe` from the draft release.
+
+## Prerequisites for development
+
+This section applies if you are running the app from source.
 
 1. **Rust + Tauri toolchain** — install if you don't have it: <https://tauri.app/start/prerequisites/>
 2. **Node** (v18+ recommended) — the engine runs via `npx tsx`.
 3. **The repo root** — all engine scripts (`follow-bot.ts`, `chain-runner.ts`, etc.) live there and must be checked out alongside `desktop/`.
 4. **A logged-in X session** — use the in-app **Connect X** button in the status bar (see below). The app opens a Chrome window to X; once detected as signed in, the status bar turns green and the window can be closed.
 
-## Setup
+## Setup for development
 
 1. Open `desktop/src/config.ts` and set `REPO_DIR` to the absolute path of the repo root on your machine:
 
