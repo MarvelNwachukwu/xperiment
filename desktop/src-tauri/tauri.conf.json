@@ -24,7 +24,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "nsis"],
+    "resources": [
+      "resources/node*",
+      "resources/engine-dist/**/*",
+      "resources/node_modules/**/*"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

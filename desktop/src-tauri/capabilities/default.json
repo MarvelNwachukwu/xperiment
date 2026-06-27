@@ -14,7 +14,12 @@
     },
     {
       "identifier": "fs:allow-exists",
-      "allow": [{ "path": "$HOME/**" }]
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "/Applications/Google Chrome.app" },
+        { "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" },
+        { "path": "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe" }
+      ]
     },
     {
       "identifier": "fs:allow-write-text-file",
@@ -22,11 +27,19 @@
     },
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "npx", "cmd": "npx", "args": true, "sidecar": false }]
+      "allow": [
+        { "name": "npx", "cmd": "npx", "args": true, "sidecar": false },
+        { "name": "node", "cmd": "$RESOURCE/resources/node", "args": true, "sidecar": false },
+        { "name": "node-win", "cmd": "$RESOURCE/resources/node.exe", "args": true, "sidecar": false }
+      ]
     },
     {
       "identifier": "shell:allow-spawn",
-      "allow": [{ "name": "npx", "cmd": "npx", "args": true, "sidecar": false }]
+      "allow": [
+        { "name": "npx", "cmd": "npx", "args": true, "sidecar": false },
+        { "name": "node", "cmd": "$RESOURCE/resources/node", "args": true, "sidecar": false },
+        { "name": "node-win", "cmd": "$RESOURCE/resources/node.exe", "args": true, "sidecar": false }
+      ]
     }
   ]
 }
