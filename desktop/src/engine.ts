@@ -1,5 +1,6 @@
 import { Command, type Child } from "@tauri-apps/plugin-shell";
-import { ENGINE, REPO_DIR } from "./config";
+import { getLaunchCtx } from "./config";
+import { resolveSpawn } from "./launcher";
 
 // Pure registry of live children, testable without a browser.
 export class ChildRegistry<T> {
@@ -28,19 +29,17 @@ export async function killAllEngine(): Promise<void> {
 
 // Spawn an engine command, streaming stdout+stderr lines to onLine.
 export function runEngine(args: string[], onLine: (line: string) => void): EngineRun {
-  const cmd = Command.create(ENGINE, args, { cwd: REPO_DIR });
-  cmd.stdout.on("data", (l) => onLine(l));
-  cmd.stderr.on("data", (l) => onLine(l));
   let child: Child | null = null;
-  const done = new Promise<void>((resolve) => {
-    cmd.on("close", () => {
-      if (child) registry.remove(child);
-      resolve();
+  const done = (async () => {
+    const ctx = await getLaunchCtx();
+    const s = resolveSpawn(args, ctx);
+    const cmd = Command.create(s.program, s.args, { cwd: s.cwd, env: s.env });
+    cmd.stdout.on("data", (l) => onLine(l));
+    cmd.stderr.on("data", (l) => onLine(l));
+    await new Promise<void>((resolve) => {
+      cmd.on("close", () => { if (child) registry.remove(child); resolve(); });
+      cmd.spawn().then((c) => { child = c; registry.add(c); });
     });
-    cmd.spawn().then((c) => { child = c; registry.add(c); });
-  });
-  return {
-    done,
-    kill: async () => { if (child) await child.kill(); },
-  };
+  })();
+  return { done, kill: async () => { if (child) await child.kill(); } };
 }

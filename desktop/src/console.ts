@@ -71,6 +71,25 @@ export function mountConsole(panels: Panel[]): void {
       r.done.then(() => { ctx.setBusy(false); current = null; }); return r; },
   };
 
+  // Chrome-missing banner
+  async function checkChrome() {
+    const mac = "/Applications/Google Chrome.app";
+    const win1 = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    const win2 = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe";
+    const ok = (await exists(mac).catch(() => false))
+      || (await exists(win1).catch(() => false))
+      || (await exists(win2).catch(() => false));
+    if (!ok) {
+      const bar = document.querySelector<HTMLElement>(".statusbar")!;
+      const b = document.createElement("span");
+      b.className = "meter";
+      b.style.color = "var(--danger)";
+      b.textContent = "Google Chrome required — get it at google.com/chrome";
+      bar.insertBefore(b, bar.querySelector("#meters"));
+    }
+  }
+  void checkChrome();
+
   // ---- cap meters (refresh every 4s) ----
   const meters = app.querySelector<HTMLElement>("#meters")!;
   const refreshMeters = async () => {
