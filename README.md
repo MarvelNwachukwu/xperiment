@@ -258,6 +258,34 @@ It is resumable -- accounts that already have a `profiles.json` entry are skippe
 
 Filtering is two-stage. Accounts with strong title signals (founder, CTO, CEO, head of, VP, etc.) land in the `strong` bucket. Accounts with ambiguous signals (lead, director, principal, etc.) land in a `review` bucket for human triage. Each candidate record includes `matchedKeywords` so the DM-writing AI can see exactly why that person was kept.
 
+### Building a niche list (any topic)
+
+Use `crawl` to seed the pipeline from any public account's follower/following graph, then `filter` with Target Criteria to keep only the profiles that match your niche.
+
+```bash
+# 1. Log in once
+npm run login
+
+# 2. Crawl seed accounts — repeat for each relevant account
+npx tsx prospect.ts crawl @BarAssociation --side followers
+npx tsx prospect.ts crawl @BigLawFirm --side followers
+# Fills output/following.json. --side is "following" or "followers" (default "following").
+
+# 3. Enrich crawled accounts into deep profiles
+npm run prospect:enrich
+# Writes output/profiles.json
+
+# 4. Filter to niche using Target Criteria
+npx tsx prospect.ts filter --who "lawyer,attorney,barrister,SAN" --where "nigeria,lagos,abuja"
+# Writes output/candidates.json
+
+# 5. Export to CSV
+npx tsx prospect.ts export-csv
+# Writes output/candidates.csv
+```
+
+`--who` is required to activate Target Criteria mode; omit it and `filter` falls back to the built-in decision-maker role filter. `--where` is optional — omit it to match any location.
+
 ### Generated files
 
 All these files live under `output/`, which is gitignored.
