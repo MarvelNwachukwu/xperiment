@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveSpawn, nodeResourceName } from "./launcher";
+import { resolveSpawn, nodeCommandName } from "./launcher";
 
-test("nodeResourceName: .exe on Windows, plain elsewhere", () => {
-  assert.equal(nodeResourceName("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"), "resources/node.exe");
-  assert.equal(nodeResourceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)"), "resources/node");
+test("nodeCommandName: scope name node-win on Windows, node elsewhere", () => {
+  assert.equal(nodeCommandName("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"), "node-win");
+  assert.equal(nodeCommandName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)"), "node");
 });
 
 const base = { nodePath: "/res/node", engineDir: "/res/engine-dist", repoDir: "/repo", dataDir: "/data" };

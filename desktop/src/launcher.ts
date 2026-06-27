@@ -1,12 +1,15 @@
-// Bundled node binary resource name; Windows stages node.exe, others node.
-export function nodeResourceName(userAgent: string): string {
-  return /Windows/i.test(userAgent) ? "resources/node.exe" : "resources/node";
+// Shell-scope command NAME for the bundled node (NOT a path): Tauri matches the
+// program passed to Command.create against a capability entry's `name`, then
+// runs that entry's `cmd` ($RESOURCE/resources/node[.exe]). Passing the resolved
+// path instead is rejected as "program not allowed on the configured shell scope".
+export function nodeCommandName(userAgent: string): string {
+  return /Windows/i.test(userAgent) ? "node-win" : "node";
 }
 
 export interface LaunchCtx {
   packaged: boolean;
-  nodePath: string;   // bundled node (packaged only)
-  engineDir: string;  // bundled engine-dist (packaged only)
+  nodePath: string;   // shell-scope command NAME for bundled node (packaged only)
+  engineDir: string;  // bundled engine-dist absolute path (packaged only)
   repoDir: string;    // dev repo root
   dataDir: string;    // writable app-data dir (packaged); repoDir in dev
 }
