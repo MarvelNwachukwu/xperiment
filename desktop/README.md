@@ -56,7 +56,7 @@ This section applies if you are running the app from source.
 
 ## Setup for development
 
-1. Open `desktop/src/config.ts` and set `REPO_DIR` to the absolute path of the repo root on your machine:
+1. Open `desktop/src/config.ts` and set `REPO_DIR` to YOUR local clone's absolute path. This is a hardcoded constant in that file — you must edit it before running `tauri dev`. It is only used in dev mode; packaged builds ignore it entirely.
 
    ```ts
    export const REPO_DIR = "/absolute/path/to/xperiment";
@@ -97,5 +97,5 @@ The GUI never exposes burst mode, `--force`, or cap overrides. Write-lock banner
 ## Notes
 
 - **Connect X** — click the button in the status bar. A Chrome window opens; if an existing session is detected the status flips to Connected immediately. Otherwise sign in manually; the sentinel is emitted when you complete login.
-- Output files (`output/*.json`, `output/candidates.csv`) are written to the repo root, not inside `desktop/`.
-- Packaging into a double-click installer (bundling Node + Chromium, signing/notarization, per-OS builds) is a separate future step and requires a human to smoke-test the GUI at a display.
+- Output files (`output/*.json`, `output/candidates.csv`) are written to the OS app-data directory when running the installed app (see the **Data location** section under Install). In dev mode (`tauri dev`) they are written to `output/` under the repo root.
+- Installers (`.dmg` for macOS, `.exe` for Windows) are available now — see the **Install** section above or download from [GitHub Releases](https://github.com/MarvelNwachukwu/xperiment/releases).

@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { resolveResource, appDataDir } from "@tauri-apps/api/path";
 import type { LaunchCtx } from "./launcher";
+import { nodeResourceName } from "./launcher";
 
 // Dev repo path (only used when running via `tauri dev`).
 export const REPO_DIR = "/Users/0xmarvel/superconductor/projects/xperiment";
@@ -14,7 +15,7 @@ async function buildLaunchCtx(): Promise<LaunchCtx> {
   const packaged = !import.meta.env.DEV; // tauri dev => Vite DEV=true
   if (!packaged) return { packaged: false, nodePath: "", engineDir: "", repoDir: REPO_DIR, dataDir: REPO_DIR };
   const [nodePath, engineDir, dataDir] = await Promise.all([
-    resolveResource("resources/node"),
+    resolveResource(nodeResourceName(navigator.userAgent)),
     resolveResource("resources/engine-dist"),
     appDataDir(),
   ]);

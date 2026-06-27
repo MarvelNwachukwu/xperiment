@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveSpawn } from "./launcher";
+import { resolveSpawn, nodeResourceName } from "./launcher";
+
+test("nodeResourceName: .exe on Windows, plain elsewhere", () => {
+  assert.equal(nodeResourceName("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"), "resources/node.exe");
+  assert.equal(nodeResourceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)"), "resources/node");
+});
 
 const base = { nodePath: "/res/node", engineDir: "/res/engine-dist", repoDir: "/repo", dataDir: "/data" };
 

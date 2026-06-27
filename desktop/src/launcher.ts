@@ -1,3 +1,8 @@
+// Bundled node binary resource name; Windows stages node.exe, others node.
+export function nodeResourceName(userAgent: string): string {
+  return /Windows/i.test(userAgent) ? "resources/node.exe" : "resources/node";
+}
+
 export interface LaunchCtx {
   packaged: boolean;
   nodePath: string;   // bundled node (packaged only)
