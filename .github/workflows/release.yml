@@ -1,0 +1,56 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Only cut releases for version tags; a manual dispatch on a branch must not
+    # create a branch-named "release".
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Install root devDeps first so `tsc` is available when prepare-resources
+      # runs `npm run build:engine` (which needs typescript from root devDeps).
+      # prepare-resources.mjs later replaces root node_modules via
+      # `npm ci --omit=dev`, producing the pruned set that gets staged.
+      - name: Install root deps (needed by build:engine)
+        run: npm ci
+
+      - name: Install desktop deps
+        run: npm ci
+        working-directory: desktop
+
+      # Compiles engine (needs root devDeps installed above), then prunes root
+      # node_modules to prod-only and stages everything into
+      # desktop/src-tauri/resources/.
+      - name: Prepare engine resources
+        run: npm run prepare-resources
+        working-directory: desktop
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "Xperiment ${{ github.ref_name }}"
+          releaseDraft: true
+          args: ${{ matrix.os == 'macos-latest' && '--bundles dmg' || '--bundles nsis' }}
