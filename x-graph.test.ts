@@ -40,6 +40,23 @@ test("parseFollowingPage: extracts users and the bottom cursor", () => {
   assert.equal(r.nextCursor, "NEXT123");
 });
 
+test("parseFollowingPage: reads screen_name/name from core (current X shape)", () => {
+  // X moved screen_name + name into `core`; description stays in `legacy`.
+  const coreEntry = {
+    entryId: "user-9",
+    content: { entryType: "TimelineTimelineItem", itemContent: {
+      itemType: "TimelineUser",
+      user_results: { result: { __typename: "User", rest_id: "9",
+        core: { name: "Adrian", screen_name: "adriankuleszo" },
+        legacy: { description: "building things" } } },
+    } },
+  };
+  const r = parseFollowingPage(page([coreEntry, cursorEntry("Bottom", "C")]));
+  assert.deepEqual(r.users, [
+    { username: "adriankuleszo", displayName: "Adrian", bio: "building things" },
+  ]);
+});
+
 test("parseFollowingPage: no users -> nextCursor null (exhausted)", () => {
   const r = parseFollowingPage(page([cursorEntry("Bottom", "NEXT123")]));
   assert.deepEqual(r.users, []);

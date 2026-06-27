@@ -49,13 +49,19 @@ export function parseFollowingPage(json: unknown): FollowingPage {
     }
     const result = content?.itemContent?.user_results?.result;
     if (!result || result.__typename !== "User") continue;
+    // X moved screen_name/name from `legacy` into `core`; bio (`description`)
+    // is still in `legacy`. Read core first, fall back to legacy for older shapes.
     const legacy = result.legacy ?? {};
-    if (typeof legacy.screen_name !== "string") continue;
-    users.push({
-      username: legacy.screen_name,
-      displayName: typeof legacy.name === "string" ? legacy.name : "",
-      bio: typeof legacy.description === "string" ? legacy.description : "",
-    });
+    const core = result.core ?? {};
+    const username = typeof core.screen_name === "string" ? core.screen_name : legacy.screen_name;
+    if (typeof username !== "string") continue;
+    const displayName =
+      typeof core.name === "string" ? core.name : typeof legacy.name === "string" ? legacy.name : "";
+    const bio =
+      typeof legacy.description === "string" ? legacy.description
+      : typeof result.profile_bio?.description === "string" ? result.profile_bio.description
+      : "";
+    users.push({ username, displayName, bio });
   }
 
   return { users, nextCursor: users.length > 0 ? bottomCursor : null };
