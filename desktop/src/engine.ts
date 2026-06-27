@@ -1,4 +1,5 @@
 import { Command, type Child } from "@tauri-apps/plugin-shell";
+import { mkdir } from "@tauri-apps/plugin-fs";
 import { getLaunchCtx } from "./config";
 import { resolveSpawn } from "./launcher";
 
@@ -34,6 +35,10 @@ export function runEngine(args: string[], onLine: (line: string) => void): Engin
   const done = (async () => {
     try {
       const ctx = await getLaunchCtx();
+      // Packaged: the app-data dir is the spawn cwd and the engine's output home,
+      // but it doesn't exist on a fresh install. Create it before spawning, or
+      // the OS rejects the cwd (Windows os error 267 "directory name is invalid").
+      if (ctx.packaged) await mkdir(ctx.dataDir, { recursive: true }).catch(() => {});
       const s = resolveSpawn(args, ctx);
       const cmd = Command.create(s.program, s.args, { cwd: s.cwd, env: s.env });
       cmd.stdout.on("data", (l) => onLine(l));
