@@ -1,7 +1,7 @@
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import type { Panel, ConsoleCtx } from "../console";
 import { dmArgs } from "../steps";
-import { REPO_DIR } from "../config";
+import { dataPath } from "../config";
 
 interface Candidate { handle: string; name: string; location: string | null; }
 
@@ -33,7 +33,7 @@ export const dmPanel: Panel = {
       if (cands.length === 0) { ctx.log("No candidates.json. Build a list first."); return 0; }
       const messages: Record<string, { tone: string; text: string }> = {};
       for (const c of cands) messages[c.handle] = { tone: "warm", text: fillTemplate(tpl, c) };
-      await writeTextFile(`${REPO_DIR}/output/messages.json`, JSON.stringify(messages, null, 2));
+      await writeTextFile(await dataPath("output/messages.json"), JSON.stringify(messages, null, 2));
       return cands.length;
     }
 
