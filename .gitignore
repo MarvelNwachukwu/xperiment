@@ -6,3 +6,4 @@ cookies.json
 # All generated state/logs live under output/
 output/
 .superpowers/
+engine-dist/
