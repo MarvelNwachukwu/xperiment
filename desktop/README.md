@@ -17,17 +17,25 @@ Download the latest installer from the [GitHub Releases](https://github.com/Marv
 
 ### First-open bypass (unsigned app)
 
-On first launch, you may see a security warning because the app is not yet code-signed. Follow these steps:
+The app is not yet code-signed, so the OS blocks it on first launch.
 
-**macOS:**
-1. Right-click the Xperiment app
-2. Click "Open"
-3. Click "Open" again on the confirmation dialog
+**macOS (Apple Silicon):** you will likely see `"Xperiment" is damaged and can't be opened`. That is not real damage, it is Gatekeeper blocking an unsigned download, and right-click → Open does NOT clear this variant. Fix it once:
+
+1. Drag **Xperiment** into your **Applications** folder.
+2. Open the Terminal app and run (copy-paste, then press Return):
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Xperiment.app"
+   ```
+3. Open Xperiment normally. It launches from now on with no further steps.
+
+(If you put the app somewhere other than Applications, change the path to match.)
 
 **Windows:**
-1. SmartScreen will appear
-2. Click "More info"
-3. Click "Run anyway"
+1. SmartScreen appears.
+2. Click "More info".
+3. Click "Run anyway".
+
+A future signed/notarized build will remove this step entirely (just double-click to open).
 
 ### Running from source
 
