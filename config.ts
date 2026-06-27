@@ -4,7 +4,15 @@ import * as path from "path";
 // ── Paths ─────────────────────────────────────────────────────
 // All generated state/logs live under output/ to keep the repo root clean.
 // Created on import so any tool can write without a separate setup step.
-export const OUTPUT_DIR = path.join(__dirname, "output");
+
+// Writable state lives under XPERIMENT_DATA_DIR when set (packaged app),
+// else next to the engine (dev). Keeps dev behavior identical.
+export function dataDir(env: Record<string, string | undefined>, dirname: string): string {
+  return env.XPERIMENT_DATA_DIR ?? dirname;
+}
+const DATA_DIR = dataDir(process.env, __dirname);
+
+export const OUTPUT_DIR = path.join(DATA_DIR, "output");
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 export const LOG_FILE = path.join(OUTPUT_DIR, "follow-log.json");
@@ -20,7 +28,7 @@ export const UNFOLLOW_LOG_FILE = path.join(OUTPUT_DIR, "unfollow-log.json");
 export const UNFOLLOW_SCAN_STATE_FILE = path.join(OUTPUT_DIR, "unfollow-scan-state.json");
 
 // Browser session cache stays at repo root — moving it forces a re-login.
-export const PROFILE_DIR = path.join(__dirname, ".chrome-profile");
+export const PROFILE_DIR = path.join(DATA_DIR, ".chrome-profile");
 
 // ── Follow Engine ─────────────────────────────────────────────
 export const FOLLOW_TIMEOUT_MS = 5000;

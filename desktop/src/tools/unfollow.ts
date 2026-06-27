@@ -2,7 +2,7 @@ import { writeTextFile } from "@tauri-apps/plugin-fs";
 import type { Panel, ConsoleCtx } from "../console";
 import { followLockHeld } from "../console";
 import { unfollowScanArgs, unfollowArgs } from "../steps";
-import { REPO_DIR } from "../config";
+import { dataPath } from "../config";
 
 interface ScanRow { username: string; displayName: string; bio: string; isTech: boolean; matchedKeywords: string[]; markedForUnfollow: boolean; }
 
@@ -37,7 +37,7 @@ export const unfollowPanel: Panel = {
         flagged.forEach((r, i) => { r.markedForUnfollow = keepIdx.has(i); });
         const byName = new Map(flagged.map((r) => [r.username, r]));
         const merged = rows.map((r) => byName.get(r.username) ?? r);
-        await writeTextFile(`${REPO_DIR}/output/unfollow-candidates.json`, JSON.stringify(merged, null, 2));
+        await writeTextFile(await dataPath("output/unfollow-candidates.json"), JSON.stringify(merged, null, 2));
         ctx.clearLog();
         await ctx.run(unfollowArgs()).done;
       });

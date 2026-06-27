@@ -1,6 +1,6 @@
 import { readTextFile, exists } from "@tauri-apps/plugin-fs";
 import { runEngine, killAllEngine, type EngineRun } from "./engine";
-import { REPO_DIR } from "./config";
+import { dataPath } from "./config";
 import { countToday, capLabel } from "./status";
 
 export interface ConsoleCtx {
@@ -65,11 +65,33 @@ export function mountConsole(panels: Panel[]): void {
     clearLog: () => { logEl.textContent = ""; },
     setBusy: (busy) => { stopBtn.disabled = !busy; },
     readJson: async <T>(rel: string) => {
-      try { return JSON.parse(await readTextFile(`${REPO_DIR}/${rel}`)) as T; } catch { return null; }
+      try { return JSON.parse(await readTextFile(await dataPath(rel))) as T; } catch { return null; }
     },
     run: (args) => { const r = runEngine(args, ctx.log); current = r; ctx.setBusy(true);
       r.done.then(() => { ctx.setBusy(false); current = null; }); return r; },
   };
+
+  // Chrome-missing banner
+  async function checkChrome() {
+    const paths = [
+      "/Applications/Google Chrome.app",
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      "/usr/bin/google-chrome",
+      "/opt/google/chrome/chrome",
+    ];
+    const results = await Promise.all(paths.map((p) => exists(p).catch(() => true)));
+    const ok = results.some(Boolean);
+    if (!ok) {
+      const bar = document.querySelector<HTMLElement>(".statusbar")!;
+      const b = document.createElement("span");
+      b.className = "meter";
+      b.style.color = "var(--danger)";
+      b.textContent = "Google Chrome required — get it at google.com/chrome";
+      bar.insertBefore(b, bar.querySelector("#meters"));
+    }
+  }
+  void checkChrome();
 
   // ---- cap meters (refresh every 4s) ----
   const meters = app.querySelector<HTMLElement>("#meters")!;
@@ -114,7 +136,7 @@ export function mountConsole(panels: Panel[]): void {
 
 // True if a follow-category write tool is currently running (lock file present).
 export async function followLockHeld(): Promise<boolean> {
-  try { return await exists(`${REPO_DIR}/output/.write-follow.lock`); } catch { return false; }
+  try { return await exists(await dataPath("output/.write-follow.lock")); } catch { return false; }
 }
 
 // eslint-disable-next-line prefer-const

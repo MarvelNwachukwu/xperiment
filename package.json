@@ -14,10 +14,14 @@
     "prospect:filter": "tsx prospect.ts filter",
     "prospect:prepare": "tsx prospect.ts prepare",
     "dm": "tsx dm-bot.ts send",
-    "cleanup": "tsx cleanup.ts"
+    "cleanup": "tsx cleanup.ts",
+    "build:engine": "tsc -p tsconfig.engine.json"
+  },
+  "dependencies": {
+    "playwright": "^1.51.0"
   },
   "devDependencies": {
-    "playwright": "^1.51.0",
+    "@types/node": "^22",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
