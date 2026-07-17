@@ -1,24 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSearchQuery, filterFollowing } from "./prospect";
+import { buildSearchQueries, filterFollowing } from "./prospect";
 
-test("buildSearchQuery: single who term, no parens", () => {
-  assert.equal(buildSearchQuery(["solidity"], []), "solidity");
+test("buildSearchQueries: who only, one plain query per term", () => {
+  assert.deepEqual(buildSearchQueries(["solidity", "web3"], []), ["solidity", "web3"]);
 });
 
-test("buildSearchQuery: OR-groups who and where, ANDed", () => {
-  assert.equal(
-    buildSearchQuery(["solidity", "web3"], ["Lagos", "Nigeria"]),
-    "(solidity OR web3) (Lagos OR Nigeria)"
-  );
+test("buildSearchQueries: who×where pairs, plain AND (no OR/parens)", () => {
+  assert.deepEqual(buildSearchQueries(["lawyer", "attorney"], ["Lagos", "Abuja"]), [
+    "lawyer Lagos",
+    "lawyer Abuja",
+    "attorney Lagos",
+    "attorney Abuja",
+  ]);
 });
 
-test("buildSearchQuery: quotes multi-word terms", () => {
-  assert.equal(buildSearchQuery(["smart contract"], []), '"smart contract"');
+test("buildSearchQueries: quotes multi-word terms", () => {
+  assert.deepEqual(buildSearchQueries(["smart contract"], ["New York"]), ['"smart contract" "New York"']);
 });
 
-test("buildSearchQuery: ignores blank terms", () => {
-  assert.equal(buildSearchQuery(["solidity", " "], []), "solidity");
+test("buildSearchQueries: ignores blank terms", () => {
+  assert.deepEqual(buildSearchQueries(["solidity", " "], []), ["solidity"]);
 });
 
 const rows = [

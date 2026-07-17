@@ -74,20 +74,19 @@ async function collectByScrolling(page: Page): Promise<ScrapedFollowing[]> {
   return [...seen.values()];
 }
 
-// Build an X People-search query from Target Criteria. who-terms OR'd together,
-// where-terms OR'd together, the two groups ANDed (space). Multi-word terms are
-// quoted. ponytail: OR-recall on X + local matchCriteria does the precise
-// who-AND-where cut; tighten the X-side query only if search returns too much.
-export function buildSearchQuery(who: string[], where: string[]): string {
-  const group = (terms: string[]) => {
-    const q = terms
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((t) => (/\s/.test(t) ? `"${t}"` : t))
-      .join(" OR ");
-    return terms.filter((t) => t.trim()).length > 1 ? `(${q})` : q;
-  };
-  return [who, where].filter((g) => g.some((t) => t.trim())).map(group).join(" ");
+// X People search only honors plain AND (space-separated) terms — `(A OR B)`
+// grouping returns "No results". So OR-recall is done by running ONE plain
+// query per who×where pair (or per who-term when no where), then merging the
+// results and letting local matchCriteria do the precise who-AND-where cut.
+// Multi-word terms are quoted so X treats them as a phrase.
+export function buildSearchQueries(who: string[], where: string[]): string[] {
+  const quote = (t: string) => (/\s/.test(t) ? `"${t}"` : t);
+  const w = who.map((t) => t.trim()).filter(Boolean).map(quote);
+  const l = where.map((t) => t.trim()).filter(Boolean).map(quote);
+  if (l.length === 0) return w;
+  const out: string[] = [];
+  for (const a of w) for (const b of l) out.push(`${a} ${b}`);
+  return out;
 }
 
 // Filter any {name, bioSnippet} rows by Target Criteria (who AND where, matched
@@ -176,25 +175,33 @@ async function search(): Promise<void> {
     console.error('Usage: npm run prospect:search -- --who "solidity,web3" [--where "Lagos,Nigeria"]');
     process.exit(1);
   }
-  const query = buildSearchQuery(who, where);
-  const pageUrl = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=user`;
+  const queries = buildSearchQueries(who, where);
 
   const { context, release } = await acquireBrowser();
   const page = await context.newPage();
   try {
-    console.log(`Searching X People for: ${query}`);
-    await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3000);
-    assertLoggedIn(page);
+    // One plain query per who×where pair; dedup handles across all of them.
+    const seen = new Map<string, ScrapedFollowing>();
+    for (const [i, query] of queries.entries()) {
+      console.log(`[${i + 1}/${queries.length}] Searching X People for: ${query}`);
+      await page.goto(
+        `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=user`,
+        { waitUntil: "domcontentloaded" }
+      );
+      await page.waitForTimeout(3000);
+      assertLoggedIn(page);
+      for (const row of await collectByScrolling(page)) {
+        if (!seen.has(row.handle)) seen.set(row.handle, row);
+      }
+    }
 
-    const scraped = await collectByScrolling(page);
     // X search ranks loosely — keep only rows whose name/bio actually match.
-    const kept = filterFollowing(scraped, who, where);
+    const kept = filterFollowing([...seen.values()], who, where);
     // Discovered handles are NOT bot-followed, so botHandles is empty.
     const merged = mergeFollowing(loadFollowing(), kept, new Set(), new Date().toISOString());
     saveFollowing(merged);
     console.log(
-      `\nSearched "${query}": ${scraped.length} scraped, ${kept.length} matched criteria, ${merged.length} total in following.json.`
+      `\nSearched ${queries.length} queries: ${seen.size} unique scraped, ${kept.length} matched criteria, ${merged.length} total in following.json.`
     );
   } finally {
     await release();
