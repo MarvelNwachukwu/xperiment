@@ -8,7 +8,6 @@ import {
   saveFollowing,
   mergeFollowing,
   type ScrapedFollowing,
-  type FollowingRecord,
 } from "./following-store";
 import { matchRole, roleLabel } from "./role-filter";
 import { matchCriteria } from "./criteria-filter";
@@ -208,7 +207,8 @@ function find(): void {
   const args = process.argv.slice(3);
   const who = readListFlag(args, "--who");
   const where = readListFlag(args, "--where");
-  const matches = filterFollowing(loadFollowing(), who, where);
+  const all = loadFollowing();
+  const matches = filterFollowing(all, who, where);
 
   if (args.includes("--csv")) {
     const columns = ["handle", "name", "bioSnippet", "firstSeen", "lastSynced", "viaBot"];
@@ -221,7 +221,7 @@ function find(): void {
   for (const r of matches) {
     console.log(`@${r.handle}  ${r.name}${r.bioSnippet ? `  — ${r.bioSnippet}` : ""}`);
   }
-  console.log(`\n${matches.length} of ${loadFollowing().length} in following.json matched.`);
+  console.log(`\n${matches.length} of ${all.length} in following.json matched.`);
 }
 
 export interface Profile {
