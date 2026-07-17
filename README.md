@@ -231,6 +231,13 @@ npm run prospect:filter  → output/candidates.json  (decision-maker shortlist)
 # Sync your following list
 npm run prospect:sync -- @yourhandle
 
+# Discover new prospects via X People search (adds matches to following.json)
+npm run prospect:search -- --who "solidity,web3" --where "Lagos,Nigeria"
+
+# Search the prospects you've already collected (local, no browser)
+npm run prospect:find -- --who lawyer --where Abuja
+npm run prospect:find -- --who lawyer --csv   # write output/following-matches.csv
+
 # Enrich all accounts in following.json
 npm run prospect:enrich
 
@@ -260,7 +267,7 @@ Filtering is two-stage. Accounts with strong title signals (founder, CTO, CEO, h
 
 ### Building a niche list (any topic)
 
-Use `crawl` to seed the pipeline from any public account's follower/following graph, then `filter` with Target Criteria to keep only the profiles that match your niche.
+Use `crawl` to seed the pipeline from any public account's follower/following graph, or `search` to pull matches straight from X People search, then `filter` with Target Criteria to keep only the profiles that match your niche. Once collected, `find` queries `following.json` locally (no browser) so you can slice your list by keyword without re-scraping.
 
 ```bash
 # 1. Log in once
