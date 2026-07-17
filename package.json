@@ -10,6 +10,8 @@
     "chain": "tsx chain-runner.ts",
     "test": "tsx --test *.test.ts",
     "prospect:sync": "tsx prospect.ts sync",
+    "prospect:search": "tsx prospect.ts search",
+    "prospect:find": "tsx prospect.ts find",
     "prospect:enrich": "tsx prospect.ts enrich",
     "prospect:filter": "tsx prospect.ts filter",
     "prospect:prepare": "tsx prospect.ts prepare",

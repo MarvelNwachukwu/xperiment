@@ -25,6 +25,7 @@ import {
   RECENT_TWEETS_COUNT,
   PROFILES_FILE,
   CANDIDATES_FILE,
+  FOLLOWING_FILE,
 } from "./config";
 
 // Scrape every UserCell currently on the page into ScrapedFollowing rows.
@@ -47,6 +48,65 @@ async function scrapeVisibleCells(page: Page): Promise<ScrapedFollowing[]> {
   return rows;
 }
 
+function assertLoggedIn(page: Page): void {
+  if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
+    throw new Error("Not logged in. Run `npm run login` first.");
+  }
+}
+
+// Scroll a user-list page (following / followers / People search) to the end,
+// scraping every UserCell. Shared by sync, crawl and search — the same
+// infinite-scroll feed in all three.
+async function collectByScrolling(page: Page): Promise<ScrapedFollowing[]> {
+  const seen = new Map<string, ScrapedFollowing>();
+  let idleScrolls = 0;
+  while (idleScrolls < 3) {
+    const before = seen.size;
+    for (const row of await scrapeVisibleCells(page)) {
+      if (!seen.has(row.handle)) seen.set(row.handle, row);
+    }
+    console.log(`  Collected ${seen.size} so far...`);
+    if (seen.size === before) idleScrolls++;
+    else idleScrolls = 0;
+    await page.mouse.wheel(0, 3000);
+    await page.waitForTimeout(SCROLL_WAIT_MS);
+  }
+  return [...seen.values()];
+}
+
+// Build an X People-search query from Target Criteria. who-terms OR'd together,
+// where-terms OR'd together, the two groups ANDed (space). Multi-word terms are
+// quoted. ponytail: OR-recall on X + local matchCriteria does the precise
+// who-AND-where cut; tighten the X-side query only if search returns too much.
+export function buildSearchQuery(who: string[], where: string[]): string {
+  const group = (terms: string[]) => {
+    const q = terms
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => (/\s/.test(t) ? `"${t}"` : t))
+      .join(" OR ");
+    return terms.filter((t) => t.trim()).length > 1 ? `(${q})` : q;
+  };
+  return [who, where].filter((g) => g.some((t) => t.trim())).map(group).join(" ");
+}
+
+// Filter any {name, bioSnippet} rows by Target Criteria (who AND where, matched
+// against name + bio). Empty who+where returns everything. where-only matches
+// on the where terms alone. Shared by search (pre-merge) and find (local query).
+export function filterFollowing<T extends { name: string; bioSnippet: string }>(
+  rows: T[],
+  who: string[],
+  where: string[]
+): T[] {
+  if (who.length === 0 && where.length === 0) return rows;
+  return rows.filter((r) => {
+    const text = `${r.name} ${r.bioSnippet}`;
+    return who.length > 0
+      ? matchCriteria(text, who, where).matched
+      : matchCriteria(text, where, []).matched;
+  });
+}
+
 async function sync(): Promise<void> {
   const args = process.argv.slice(3);
   const meArg = args.find((a) => !a.startsWith("-"));
@@ -63,33 +123,13 @@ async function sync(): Promise<void> {
     console.log(`Navigating to ${pageUrl} ...`);
     await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(3000);
-    if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-      throw new Error("Not logged in. Run `npm run login` first.");
-    }
+    assertLoggedIn(page);
 
-    const seen = new Map<string, ScrapedFollowing>();
-    let idleScrolls = 0;
-    while (idleScrolls < 3) {
-      const before = seen.size;
-      for (const row of await scrapeVisibleCells(page)) {
-        if (!seen.has(row.handle)) seen.set(row.handle, row);
-      }
-      console.log(`  Collected ${seen.size} so far...`);
-      if (seen.size === before) idleScrolls++;
-      else idleScrolls = 0;
-      await page.mouse.wheel(0, 3000);
-      await page.waitForTimeout(SCROLL_WAIT_MS);
-    }
-
+    const scraped = await collectByScrolling(page);
     const botHandles = new Set(loadLog().map((r) => r.username));
-    const merged = mergeFollowing(
-      loadFollowing(),
-      [...seen.values()],
-      botHandles,
-      new Date().toISOString()
-    );
+    const merged = mergeFollowing(loadFollowing(), scraped, botHandles, new Date().toISOString());
     saveFollowing(merged);
-    console.log(`\nSynced. ${seen.size} scraped, ${merged.length} total in following.json.`);
+    console.log(`\nSynced. ${scraped.length} scraped, ${merged.length} total in following.json.`);
   } finally {
     await release();
   }
@@ -113,31 +153,75 @@ async function crawl(): Promise<void> {
     console.log(`Crawling ${pageUrl} ...`);
     await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(3000);
-    if (page.url().includes("/login") || page.url().includes("/i/flow/login")) {
-      throw new Error("Not logged in. Run `npm run login` first.");
-    }
+    assertLoggedIn(page);
 
-    const seen = new Map<string, ScrapedFollowing>();
-    let idleScrolls = 0;
-    while (idleScrolls < 3) {
-      const before = seen.size;
-      for (const row of await scrapeVisibleCells(page)) {
-        if (!seen.has(row.handle)) seen.set(row.handle, row);
-      }
-      console.log(`  Collected ${seen.size} so far...`);
-      if (seen.size === before) idleScrolls++;
-      else idleScrolls = 0;
-      await page.mouse.wheel(0, 3000);
-      await page.waitForTimeout(SCROLL_WAIT_MS);
-    }
-
+    const scraped = await collectByScrolling(page);
     // Discovered handles are NOT bot-followed, so botHandles is empty.
-    const merged = mergeFollowing(loadFollowing(), [...seen.values()], new Set(), new Date().toISOString());
+    const merged = mergeFollowing(loadFollowing(), scraped, new Set(), new Date().toISOString());
     saveFollowing(merged);
-    console.log(`\nCrawled @${seed}/${side}: ${seen.size} discovered, ${merged.length} total in following.json.`);
+    console.log(`\nCrawled @${seed}/${side}: ${scraped.length} discovered, ${merged.length} total in following.json.`);
   } finally {
     await release();
   }
+}
+
+// Discover new prospects via X's People search (deferred fallback to seed
+// crawling). Builds a search query from --who/--where, scrapes the People tab,
+// keeps only bios that match the criteria, and merges them into following.json.
+async function search(): Promise<void> {
+  const args = process.argv.slice(3);
+  const who = readListFlag(args, "--who");
+  const where = readListFlag(args, "--where");
+  if (who.length === 0) {
+    console.error('Usage: npm run prospect:search -- --who "solidity,web3" [--where "Lagos,Nigeria"]');
+    process.exit(1);
+  }
+  const query = buildSearchQuery(who, where);
+  const pageUrl = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=user`;
+
+  const { context, release } = await acquireBrowser();
+  const page = await context.newPage();
+  try {
+    console.log(`Searching X People for: ${query}`);
+    await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
+    assertLoggedIn(page);
+
+    const scraped = await collectByScrolling(page);
+    // X search ranks loosely — keep only rows whose name/bio actually match.
+    const kept = filterFollowing(scraped, who, where);
+    // Discovered handles are NOT bot-followed, so botHandles is empty.
+    const merged = mergeFollowing(loadFollowing(), kept, new Set(), new Date().toISOString());
+    saveFollowing(merged);
+    console.log(
+      `\nSearched "${query}": ${scraped.length} scraped, ${kept.length} matched criteria, ${merged.length} total in following.json.`
+    );
+  } finally {
+    await release();
+  }
+}
+
+// Local query over following.json — no browser. Filter the prospects you've
+// already collected by --who/--where and print them (or --csv to a file).
+function find(): void {
+  const args = process.argv.slice(3);
+  const who = readListFlag(args, "--who");
+  const where = readListFlag(args, "--where");
+  const all = loadFollowing();
+  const matches = filterFollowing(all, who, where);
+
+  if (args.includes("--csv")) {
+    const columns = ["handle", "name", "bioSnippet", "firstSeen", "lastSynced", "viaBot"];
+    const outFile = FOLLOWING_FILE.replace(/\.json$/, "-matches.csv");
+    fs.writeFileSync(outFile, toCsv(matches as unknown as Record<string, unknown>[], columns));
+    console.log(`Wrote ${matches.length} matches to ${outFile}`);
+    return;
+  }
+
+  for (const r of matches) {
+    console.log(`@${r.handle}  ${r.name}${r.bioSnippet ? `  — ${r.bioSnippet}` : ""}`);
+  }
+  console.log(`\n${matches.length} of ${all.length} in following.json matched.`);
 }
 
 export interface Profile {
@@ -345,12 +429,14 @@ if (require.main === module) {
     });
   if (command === "sync") run(sync);
   else if (command === "crawl") run(crawl);
+  else if (command === "search") run(search);
+  else if (command === "find") run(async () => find());
   else if (command === "enrich") run(enrich);
   else if (command === "filter") run(filter);
   else if (command === "prepare") run(prepare);
   else if (command === "export-csv") run(exportCsv);
   else {
-    console.error("Usage: tsx prospect.ts <sync|crawl|enrich|filter|prepare|export-csv>");
+    console.error("Usage: tsx prospect.ts <sync|crawl|search|find|enrich|filter|prepare|export-csv>");
     process.exit(1);
   }
 }
