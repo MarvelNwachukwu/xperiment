@@ -39,32 +39,44 @@ function confirmPrompt(question: string): Promise<boolean> {
 // Navigate to the profile and try to open the DM composer. Returns true if a
 // composer input is reachable (i.e. we can DM this person). Opening the
 // composer does NOT send anything — X only creates the conversation on send.
+// X Chat shows the Message button on every profile; a closed inbox only shows
+// up after opening the thread ("@handle has a closed inbox ... Use X Number").
+// After the click, X can keep showing the previous thread for a moment, so we
+// wait until the thread header links to this handle before judging it.
 async function openDmComposer(page: Page, handle: string): Promise<boolean> {
   await page.goto(`https://x.com/${handle}`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3000);
   const msgBtn = await page.$('[data-testid="sendDMFromProfile"], button[aria-label^="Message"]');
   if (!msgBtn) return false;
   await msgBtn.click();
-  const input = await page
-    .waitForSelector('[data-testid="dmComposerTextInput"]', { timeout: 8000 })
+  const inThread = await page
+    .waitForSelector(`main a[href$="/${handle}" i]`, { timeout: 15000 })
     .catch(() => null);
-  return !!input;
+  if (!inThread) return false;
+  await page.waitForTimeout(1500);
+  const closed = await page
+    .getByText(new RegExp(`@${handle}\\s+has a closed inbox`, "i"))
+    .first()
+    .isVisible()
+    .catch(() => false);
+  const input = await page.$('[data-testid="dm-composer-textarea"]');
+  return !!input && !closed;
 }
 
-// Types text into the already-open composer and clicks send. Returns true if
-// the composer cleared (best-effort confirmation that the message went out).
+// Fills the already-open composer and clicks send. fill() sets the textarea
+// value directly, so a newline is part of the text rather than an Enter
+// keypress (which the composer may treat as send). Returns true if the composer
+// cleared (best-effort confirmation that the message went out).
 async function sendDm(page: Page, text: string): Promise<boolean> {
-  const input = await page.$('[data-testid="dmComposerTextInput"]');
+  const input = await page.$('[data-testid="dm-composer-textarea"]');
   if (!input) return false;
-  await input.click();
-  await page.keyboard.type(text);
+  await input.fill(text);
   await page.waitForTimeout(500);
-  const sendBtn = await page.$('[data-testid="dmComposerSendButton"]');
+  const sendBtn = await page.$('[data-testid="dm-composer-send-button"]');
   if (!sendBtn) return false;
   await sendBtn.click();
   await page.waitForTimeout(2000);
-  const remaining = (await input.innerText().catch(() => "")) ?? "";
-  return remaining.trim().length === 0;
+  return (await input.inputValue().catch(() => text)).trim().length === 0;
 }
 
 async function send(): Promise<void> {
