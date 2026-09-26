@@ -342,6 +342,55 @@ Every attempt is appended to `output/dm-log.json` with a status of `sent`, `skip
 
 Always dry-run first (`npm run dm`) and confirm the DM selectors work in your browser before going `--live`.
 
+## Sending Telegram messages (tg-bot.ts)
+
+`tg-bot.ts` does for Telegram what `dm-bot.ts` does for X. It drives Telegram Web (web.telegram.org/k) in the same shared Chrome, so there are no API keys: log in once by scanning a QR code with your phone.
+
+```bash
+npm run tg:login                  # one time: scan the QR code in the Chrome window
+npm run tg                        # dry-run preview (safe default)
+npm run tg -- --approve --live    # send, confirming each message
+```
+
+Drafts go in `output/tg-messages.json`, same shape as `messages.json` (`angle` is optional). Keys can be `alice`, `@alice` or `https://t.me/alice`.
+
+- **Checks the username first.** Before opening anything it reads the public `t.me/<username>` page. No such username, or a channel, group or bot instead of a person, is logged `skipped_bad_handle`.
+- **Confirms it's the right chat.** Each chat opens with a full page load, and nothing is typed until the chat header shows the name from `t.me`. This avoids the X bug where the previous chat was still on screen.
+- **Skips people who can't be messaged.** If the message box is missing or replaced by a button (Premium-only or contacts-only privacy, a block), it logs `skipped_no_open_dm` with the button text.
+- **Confirms the send.** A send counts only when the message box clears and the last outgoing message starts with the text and is no longer "sending". Line breaks are kept.
+- Idempotency, length check (4,096), burst pacing and `--approve` work as in dm-bot. The daily cap is `TG_MAX_PER_DAY` (default 10), lower than X because Telegram restricts accounts that get reported for cold messages.
+
+Every attempt goes to `output/tg-log.json`. `tg --live` has its own write lock (`output/.write-tg.lock`).
+
+## Email drafts (mail-bot.ts)
+
+`mail-bot.ts` never sends email. It saves each message as a Gmail draft so you read it, fix anything, and click Send yourself. Afterwards it checks Sent Mail to log what went out.
+
+Setup: turn on 2-Step Verification, create an app password at myaccount.google.com/apppasswords, and set:
+
+```bash
+export GMAIL_USER=you@gmail.com
+export GMAIL_APP_PASSWORD='abcd efgh ijkl mnop'
+```
+
+```bash
+npm run mail:draft                # dry-run: validates, prints subjects
+npm run mail:draft -- --live      # save drafts to Gmail (still sends nothing)
+npm run mail:sync                 # after you send: find them in Sent Mail, log "sent"
+```
+
+Drafts go in `output/mail-messages.json`, keyed by address, and need a `subject`:
+
+```json
+{ "max@firm.com": { "tone": "cold", "angle": "LA: opinion memo / $2,990", "subject": "Your 12 Sep token memo", "text": "Hi Max, ..." } }
+```
+
+- Folders are found by their IMAP special-use flag, so a Gmail in another language works.
+- The same text is never drafted twice for the same address. Change the text to draft again.
+- `sync` logs a draft as `sent` when Sent Mail has a message to that address dated after the draft was saved. You can edit the draft, subject included, before sending.
+
+Every attempt goes to `output/mail-log.json` with a status of `drafted`, `sent`, `failed` or `dry_run`.
+
 ## Running multiple tools at once
 
 All tools share **one** Chrome over CDP (`CDP_PORT`, default 9222). The first tool you start launches the browser; any tool you start afterward attaches to that same instance. One login serves all of them, so you can run, say, `prospect:enrich` in one terminal and `follow` in another without hitting Chrome's `SingletonLock` error.
@@ -353,11 +402,11 @@ All tools share **one** Chrome over CDP (`CDP_PORT`, default 9222). The first to
 To prevent two tools from clobbering each other's state:
 
 - **Follow-category tools** (`follow`, `chain`, `unfollow`) are mutually exclusive. Starting a second one while the first is running refuses with a message that names the holder (pid + start time).
-- **`dm --live`** is its own separate category, so it *can* run alongside a follow-category tool — but not alongside another `dm --live`.
+- **`dm --live`**, **`tg --live`** and **`mail:draft --live`** each have their own category, so each *can* run alongside a follow-category tool and alongside each other, but not alongside a second copy of itself.
 - **Read-only commands** (`prospect sync`/`enrich`/`filter`, `dm` dry-run, `login`) are never blocked.
 - **`--force`** overrides the refusal. It logs a warning and proceeds without clobbering the holder's lock file, so the holder is not affected.
 
-Lock files live at `output/.write-follow.lock` and `output/.write-dm.lock`. If a run crashes without cleaning up, the stale lock is automatically reclaimed the next time a tool starts — it checks whether the recorded pid is still alive.
+Lock files live at `output/.write-<category>.lock` (`follow`, `dm`, `tg`, `mail`). If a run crashes without cleaning up, the stale lock is automatically reclaimed the next time a tool starts — it checks whether the recorded pid is still alive.
 
 ### Example
 
@@ -419,6 +468,8 @@ All generated state and logs live under `output/` (gitignored). The only generat
 - `output/candidates.json` -- decision-maker shortlist
 - `output/messages.json` -- DM drafts (produced by the writer AI)
 - `output/dm-log.json` -- record of DM sends
+- `output/tg-messages.json` / `output/tg-log.json` -- Telegram drafts and sends
+- `output/mail-messages.json` / `output/mail-log.json` -- email drafts, saved drafts and confirmed sends
 - `output/unfollow-candidates.json` -- the scan results (your review list)
 - `output/unfollow-log.json` -- record of every account you've unfollowed
 - `output/chain-state.json` -- chain mode state (current target, followed list, heartbeat)

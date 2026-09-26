@@ -1,5 +1,4 @@
 import type { Page } from "playwright";
-import * as readline from "readline";
 import { acquireBrowser } from "./browser";
 import { acquireWriteLock } from "./write-lock";
 import { BurstScheduler, applyDelay } from "./pacing";
@@ -13,6 +12,7 @@ import {
   dmsToday,
   parseDmFlags,
   textHash,
+  confirmPrompt,
   type DmRecord,
 } from "./dm-store";
 import {
@@ -25,16 +25,6 @@ import {
   DM_REST_DELAY_MIN_SEC,
   DM_REST_DELAY_MAX_SEC,
 } from "./config";
-
-function confirmPrompt(question: string): Promise<boolean> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(`${question}\n  Send? [y/N] `, (ans) => {
-      rl.close();
-      resolve(ans.trim().toLowerCase() === "y");
-    });
-  });
-}
 
 // Navigate to the profile and try to open the DM composer. Returns true if a
 // composer input is reachable (i.e. we can DM this person). Opening the

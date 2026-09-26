@@ -16,10 +16,15 @@
     "prospect:filter": "tsx prospect.ts filter",
     "prospect:prepare": "tsx prospect.ts prepare",
     "dm": "tsx dm-bot.ts send",
+    "tg": "tsx tg-bot.ts send",
+    "tg:login": "tsx tg-bot.ts login",
+    "mail:draft": "tsx mail-bot.ts draft",
+    "mail:sync": "tsx mail-bot.ts sync",
     "cleanup": "tsx cleanup.ts",
     "build:engine": "tsc -p tsconfig.engine.json"
   },
   "dependencies": {
+    "imapflow": "^2.0.7",
     "playwright": "^1.51.0"
   },
   "devDependencies": {

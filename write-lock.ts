@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { OUTPUT_DIR } from "./config";
 
-export type WriteCategory = "follow" | "dm";
+export type WriteCategory = "follow" | "dm" | "tg" | "mail";
 
 export interface LockInfo {
   tool: string;

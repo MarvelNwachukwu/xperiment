@@ -23,6 +23,10 @@ export const PROFILES_FILE = path.join(OUTPUT_DIR, "profiles.json");
 export const CANDIDATES_FILE = path.join(OUTPUT_DIR, "candidates.json");
 export const MESSAGES_FILE = path.join(OUTPUT_DIR, "messages.json");
 export const DM_LOG_FILE = path.join(OUTPUT_DIR, "dm-log.json");
+export const TG_MESSAGES_FILE = path.join(OUTPUT_DIR, "tg-messages.json");
+export const TG_LOG_FILE = path.join(OUTPUT_DIR, "tg-log.json");
+export const MAIL_MESSAGES_FILE = path.join(OUTPUT_DIR, "mail-messages.json");
+export const MAIL_LOG_FILE = path.join(OUTPUT_DIR, "mail-log.json");
 export const UNFOLLOW_CANDIDATES_FILE = path.join(OUTPUT_DIR, "unfollow-candidates.json");
 export const UNFOLLOW_LOG_FILE = path.join(OUTPUT_DIR, "unfollow-log.json");
 export const UNFOLLOW_SCAN_STATE_FILE = path.join(OUTPUT_DIR, "unfollow-scan-state.json");
@@ -104,3 +108,15 @@ export const DM_INTRA_DELAY_MIN_SEC = 20;
 export const DM_INTRA_DELAY_MAX_SEC = 60;
 export const DM_REST_DELAY_MIN_SEC = 180;
 export const DM_REST_DELAY_MAX_SEC = 600;
+
+// ── Telegram Sender (tg-bot) ──────────────────────────────────
+// Cold messages to non-contacts are what Telegram's spam filter watches; a few
+// reports and the account can only message mutual contacts. Lower cap than X.
+// Pacing reuses the DM_* cluster/delay values above.
+export const TG_MAX_PER_DAY = 10;
+export const TG_MAX_LENGTH = 4096; // Telegram message character limit
+
+// ── Email Drafts (mail-bot) ───────────────────────────────────
+// mail-bot only saves drafts over IMAP; the User sends each one from Gmail.
+// Credentials come from GMAIL_USER / GMAIL_APP_PASSWORD in the environment.
+export const GMAIL_IMAP_HOST = "imap.gmail.com";
